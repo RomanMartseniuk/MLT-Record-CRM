@@ -1,0 +1,159 @@
+@import 'tailwindcss';
+
+@source '../index.html';
+@source './**/*.{ts,tsx}';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Базова дизайн-система (shadcn/ui), нейтральна палітра.
+  Кольори використовуються ТІЛЬКИ через токени, без hex у компонентах.
+
+  Масштаб типографіки збігається зі стандартним Tailwind:
+    h1 = text-4xl (36/40)   h2 = text-3xl (30/36)   h3 = text-2xl (24/32)
+    body = text-base (16/24) small = text-sm (14/20) caption = text-xs (12/16)
+  Відступи: 1 = 4px, 2 = 8px, 4 = 16px, 6 = 24px.
+  Радіуси: rounded-sm = 4px, rounded-md = 6px, rounded-lg = 8px.
+*/
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --border: #e5e5e5;
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+
+  /* Два додаткові токени — лише для бейджів статусів */
+  --success: #15803d;
+  --success-foreground: #f0fdf4;
+  --warning: #a16207;
+  --warning-foreground: #fffbeb;
+
+  /* Нейтральний рамп для графіків, похідний від базових токенів */
+  --chart-1: #171717;
+  --chart-2: #4d4d4d;
+  --chart-3: #808080;
+  --chart-4: #b0b0b0;
+  --chart-5: #d9d9d9;
+  --chart-grid: #e5e5e5;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --border: #262626;
+  --destructive: #ef4444;
+  --destructive-foreground: #0a0a0a;
+
+  --success: #4ade80;
+  --success-foreground: #052e16;
+  --warning: #fbbf24;
+  --warning-foreground: #1f1603;
+
+  --chart-1: #fafafa;
+  --chart-2: #c9c9c9;
+  --chart-3: #949494;
+  --chart-4: #636363;
+  --chart-5: #3d3d3d;
+  --chart-grid: #262626;
+}
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  /* Похідні псевдоніми, щоб не вводити нових кольорів */
+  --color-card: var(--background);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--background);
+  --color-popover-foreground: var(--foreground);
+  --color-secondary: var(--muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-accent: var(--muted);
+  --color-accent-foreground: var(--foreground);
+  --color-input: var(--border);
+  --color-ring: var(--muted-foreground);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring, var(--muted-foreground));
+    outline-offset: 2px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Прибираємо стрілки у числових полів — кількість вводиться з клавіатури */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
