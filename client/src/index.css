@@ -6,7 +6,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  Базова дизайн-система (shadcn/ui), нейтральна палітра.
+  Базова дизайн-система (shadcn/ui), палітра синьо-сірих відтінків.
   Кольори використовуються ТІЛЬКИ через токени, без hex у компонентах.
 
   Масштаб типографіки збігається зі стандартним Tailwind:
@@ -17,53 +17,60 @@
 */
 
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --primary: #171717;
-  --primary-foreground: #fafafa;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --border: #e5e5e5;
-  --destructive: #dc2626;
+  /* Палітра: #06141B #11212D #253745 #4A5C6A #9BA8AB #CCD0CF */
+  --palette-1: #06141b;
+  --palette-2: #11212d;
+  --palette-3: #253745;
+  --palette-4: #4a5c6a;
+  --palette-5: #9ba8ab;
+  --palette-6: #ccd0cf;
+
+  --background: var(--palette-6);
+  --foreground: var(--palette-1);
+  --primary: var(--palette-2);
+  --primary-foreground: var(--palette-6);
+  --muted: color-mix(in srgb, var(--palette-5) 40%, var(--palette-6));
+  --muted-foreground: var(--palette-4);
+  --border: var(--palette-5);
+  --destructive: #b91c1c;
   --destructive-foreground: #fafafa;
 
   /* Два додаткові токени — лише для бейджів статусів */
-  --success: #15803d;
+  --success: #166534;
   --success-foreground: #f0fdf4;
-  --warning: #a16207;
+  --warning: #92400e;
   --warning-foreground: #fffbeb;
 
-  /* Нейтральний рамп для графіків, похідний від базових токенів */
-  --chart-1: #171717;
-  --chart-2: #4d4d4d;
-  --chart-3: #808080;
-  --chart-4: #b0b0b0;
-  --chart-5: #d9d9d9;
-  --chart-grid: #e5e5e5;
+  --chart-1: var(--palette-1);
+  --chart-2: var(--palette-3);
+  --chart-3: var(--palette-4);
+  --chart-4: var(--palette-5);
+  --chart-5: color-mix(in srgb, var(--palette-5) 55%, var(--palette-6));
+  --chart-grid: var(--palette-5);
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #171717;
-  --muted: #262626;
-  --muted-foreground: #a3a3a3;
-  --border: #262626;
-  --destructive: #ef4444;
-  --destructive-foreground: #0a0a0a;
+  --background: var(--palette-1);
+  --foreground: var(--palette-6);
+  --primary: var(--palette-6);
+  --primary-foreground: var(--palette-1);
+  --muted: var(--palette-2);
+  --muted-foreground: var(--palette-5);
+  --border: var(--palette-3);
+  --destructive: #f87171;
+  --destructive-foreground: #06141b;
 
   --success: #4ade80;
   --success-foreground: #052e16;
   --warning: #fbbf24;
   --warning-foreground: #1f1603;
 
-  --chart-1: #fafafa;
-  --chart-2: #c9c9c9;
-  --chart-3: #949494;
-  --chart-4: #636363;
-  --chart-5: #3d3d3d;
-  --chart-grid: #262626;
+  --chart-1: var(--palette-6);
+  --chart-2: var(--palette-5);
+  --chart-3: var(--palette-4);
+  --chart-4: var(--palette-3);
+  --chart-5: var(--palette-2);
+  --chart-grid: var(--palette-3);
 }
 
 @theme inline {
