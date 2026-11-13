@@ -5,7 +5,6 @@ import type {
   AllocationLine,
   Batch,
   Db,
-  Product,
   Purchase,
   PurchaseItem,
   PurchaseStatus,
@@ -164,7 +163,7 @@ export function purchaseAllocatedKop(db: Db, purchase: Purchase): number {
   return Math.round(total)
 }
 
-export function purchaseUnallocatedKop(db: Db, purchase: Purchase): number {
+export function purchaseRemainingKop(db: Db, purchase: Purchase): number {
   let total = 0
   for (const batch of purchaseBatches(db, purchase.id)) {
     total += batch.qtyRemaining * batch.unitPriceKop
@@ -188,46 +187,6 @@ export function canCancelPurchase(db: Db, purchase: Purchase): boolean {
   if (purchase.cancelled) return false
   const batches = purchaseBatches(db, purchase.id)
   return batches.every((batch) => batch.qtyRemaining >= batch.qtyReceived)
-}
-
-/* ─── Нерозподілені закупівлі ──────────────────────────────────────── */
-
-export interface UnallocatedRow {
-  purchase: Purchase
-  item: PurchaseItem
-  batch: Batch
-  product: Product | undefined
-  supplierName: string
-  totalQty: number
-  allocatedQty: number
-  availableQty: number
-  totalKop: number
-  unallocatedKop: number
-}
-
-export function unallocatedRows(db: Db): UnallocatedRow[] {
-  const rows: UnallocatedRow[] = []
-  for (const purchase of db.purchases) {
-    if (purchase.cancelled) continue
-    for (const item of purchase.items) {
-      const batch = itemBatch(db, item.id)
-      if (!batch || batch.qtyRemaining <= 0) continue
-      const supplier = db.suppliers.find((candidate) => candidate.id === purchase.supplierId)
-      rows.push({
-        purchase,
-        item,
-        batch,
-        product: db.products.find((candidate) => candidate.id === item.productId),
-        supplierName: supplier ? supplier.name : '—',
-        totalQty: batch.qtyReceived,
-        allocatedQty: roundQty(batch.qtyReceived - batch.qtyRemaining),
-        availableQty: batch.qtyRemaining,
-        totalKop: Math.round(batch.qtyReceived * batch.unitPriceKop),
-        unallocatedKop: Math.round(batch.qtyRemaining * batch.unitPriceKop),
-      })
-    }
-  }
-  return sortBy(rows, (row) => row.purchase.date).reverse()
 }
 
 /* ─── Періоди ──────────────────────────────────────────────────────── */
@@ -309,7 +268,6 @@ export function rangeDays(range: DateRange): number {
 export interface DashboardMetrics {
   purchasesKop: number
   allocatedKop: number
-  unallocatedInPeriodKop: number
   stockValueKop: number
   activeOrdersWithAllocations: number
   operationsCount: number
@@ -330,7 +288,6 @@ export function dashboardMetrics(db: Db, range: DateRange): DashboardMetrics {
   return {
     purchasesKop: sum(purchases.map((item) => purchaseTotalKop(item))),
     allocatedKop: sum(allocations.map((item) => item.totalKop)),
-    unallocatedInPeriodKop: sum(purchases.map((item) => purchaseUnallocatedKop(db, item))),
     stockValueKop: totalStockValueKop(db),
     activeOrdersWithAllocations: activeOrders.length,
     operationsCount: db.audit.filter((item) => inRange(item.at, range)).length,
@@ -424,13 +381,13 @@ export function categoryBreakdown(db: Db, range: DateRange): NamedValue[] {
   return sortBy(rows, (row) => -row.value)
 }
 
-export function allocatedVsUnallocated(db: Db, range: DateRange): NamedValue[] {
+export function allocatedVsStock(db: Db, range: DateRange): NamedValue[] {
   const purchases = db.purchases.filter((item) => !item.cancelled && inRange(item.date, range))
   const allocated = sum(purchases.map((item) => purchaseAllocatedKop(db, item)))
-  const unallocated = sum(purchases.map((item) => purchaseUnallocatedKop(db, item)))
+  const unallocated = sum(purchases.map((item) => purchaseRemainingKop(db, item)))
   return [
-    { name: 'Розподілено', value: Math.round(allocated / 100) },
-    { name: 'Нерозподілено', value: Math.round(unallocated / 100) },
+    { name: 'У заявках', value: Math.round(allocated / 100) },
+    { name: 'На складі', value: Math.round(unallocated / 100) },
   ]
 }
 

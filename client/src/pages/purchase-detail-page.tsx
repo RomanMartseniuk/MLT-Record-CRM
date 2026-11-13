@@ -23,7 +23,7 @@ import {
   purchaseItemTotalKop,
   purchaseStatus,
   purchaseTotalKop,
-  purchaseUnallocatedKop,
+  purchaseRemainingKop,
   roundQty,
 } from '@/domain/calc'
 import { AUDIT_ACTION_LABELS } from '@/domain/labels'
@@ -55,7 +55,7 @@ export function PurchaseDetailPage() {
   const status = purchaseStatus(db, purchase)
   const totalKop = purchaseTotalKop(purchase)
   const allocatedKop = purchaseAllocatedKop(db, purchase)
-  const unallocatedKop = purchaseUnallocatedKop(db, purchase)
+  const remainingKop = purchaseRemainingKop(db, purchase)
   const canCancel = has('purchases.create') && canCancelPurchase(db, purchase)
 
   const auditEntries = db.audit.filter((entry) => entry.objectId === purchase.id)
@@ -180,11 +180,11 @@ export function PurchaseDetailPage() {
                 <span className="text-sm tabular-nums">{formatMoney(allocatedKop)}</span>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-muted-foreground">Нерозподілено</span>
-                <span className="text-sm tabular-nums">{formatMoney(unallocatedKop)}</span>
+                <span className="text-xs text-muted-foreground">Залишок на складі</span>
+                <span className="text-sm tabular-nums">{formatMoney(remainingKop)}</span>
               </div>
               <InfoNote className="mt-2">
-                Нерозподілена частина лежить на складі. Це ті самі гроші, тому з розподіленими вони не додаються.
+                Залишок закупівлі — це і є товар на складі за ціною цієї партії. З розподіленою частиною ці суми не додаються.
               </InfoNote>
             </CardContent>
           </Card>

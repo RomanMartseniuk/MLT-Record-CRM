@@ -21,7 +21,7 @@ import {
   purchaseAllocatedKop,
   purchaseStatus,
   purchaseTotalKop,
-  purchaseUnallocatedKop,
+  purchaseRemainingKop,
 } from '@/domain/calc'
 import { PURCHASE_STATUS_LABELS } from '@/domain/labels'
 import { formatDate, formatMoney } from '@/lib/format'
@@ -52,7 +52,7 @@ export function PurchasesPage() {
         status: purchaseStatus(db, purchase),
         totalKop: purchaseTotalKop(purchase),
         allocatedKop: purchaseAllocatedKop(db, purchase),
-        unallocatedKop: purchaseUnallocatedKop(db, purchase),
+        remainingKop: purchaseRemainingKop(db, purchase),
       }
     })
 
@@ -173,7 +173,7 @@ export function PurchasesPage() {
                   <TableHead className="text-right">Позицій</TableHead>
                   <TableHead className="text-right">Сума</TableHead>
                   <TableHead className="text-right">Розподілено</TableHead>
-                  <TableHead className="text-right">Нерозподілено</TableHead>
+                  <TableHead className="text-right">Залишок на складі</TableHead>
                   <TableHead>Автор</TableHead>
                   <TableHead>Статус</TableHead>
                 </TableRow>
@@ -205,7 +205,7 @@ export function PurchasesPage() {
                         {formatMoney(row.allocatedKop)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatMoney(row.unallocatedKop)}
+                        {formatMoney(row.remainingKop)}
                       </TableCell>
                       <TableCell className="max-w-36 truncate text-muted-foreground">{row.authorName}</TableCell>
                       <TableCell>

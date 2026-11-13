@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import {
   ArrowRightLeft,
   Boxes,
-  PackageSearch,
   ShoppingCart,
   Undo2,
   Wrench,
@@ -15,7 +14,7 @@ import { EmptyState, InfoNote, PageBody, PageHeader } from '@/components/common/
 import { PeriodFilter } from '@/components/common/period-filter'
 import { Stat } from '@/components/common/stat'
 import {
-  allocatedVsUnallocated,
+  allocatedVsStock,
   categoryBreakdown,
   dashboardMetrics,
   moneySeries,
@@ -47,7 +46,7 @@ export function DashboardPage() {
   const metrics = useMemo(() => dashboardMetrics(db, range), [db, range])
   const series = useMemo(() => moneySeries(db, range), [db, range])
   const byCategory = useMemo(() => categoryBreakdown(db, range), [db, range])
-  const split = useMemo(() => allocatedVsUnallocated(db, range), [db, range])
+  const split = useMemo(() => allocatedVsStock(db, range), [db, range])
 
   const recent = useMemo(
     () => db.audit.filter((entry) => entry.at <= range.to).slice(0, isMobile ? 6 : 10),
@@ -64,7 +63,7 @@ export function DashboardPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Загальна сума закупівель"
           value={formatMoney(metrics.purchasesKop)}
@@ -80,16 +79,9 @@ export function DashboardPage() {
           icon={<Wrench />}
         />
         <Stat
-          label="Нерозподілені закупівлі"
-          value={formatMoney(metrics.unallocatedInPeriodKop)}
-          hint="З закупівель періоду"
-          to="/inventory"
-          icon={<PackageSearch />}
-        />
-        <Stat
           label="Вартість залишків на складі"
           value={formatMoney(metrics.stockValueKop)}
-          hint="Станом на зараз, за весь час"
+          hint="Усе, що зараз лежить на складі"
           to="/inventory"
           icon={<Boxes />}
         />
@@ -119,7 +111,7 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Розподілені та нерозподілені закупівлі</CardTitle>
+            <CardTitle>Закупівлі: у заявках і на складі</CardTitle>
           </CardHeader>
           <CardContent>
             <DonutChart data={split} emptyText="За цей період закупівель не було." />
