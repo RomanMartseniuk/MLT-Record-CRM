@@ -83,7 +83,7 @@ export function DashboardPage() {
           label="Нерозподілені закупівлі"
           value={formatMoney(metrics.unallocatedInPeriodKop)}
           hint="З закупівель періоду"
-          to="/unallocated"
+          to="/inventory"
           icon={<PackageSearch />}
         />
         <Stat

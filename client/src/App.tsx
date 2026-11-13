@@ -15,7 +15,6 @@ import { PurchasesPage } from '@/pages/purchases-page'
 import { PurchaseNewPage } from '@/pages/purchase-new-page'
 import { PurchaseDetailPage } from '@/pages/purchase-detail-page'
 import { InventoryPage } from '@/pages/inventory-page'
-import { UnallocatedPage } from '@/pages/unallocated-page'
 import { SuppliersPage } from '@/pages/suppliers-page'
 import { CategoriesPage } from '@/pages/categories-page'
 import { AnalyticsPage } from '@/pages/analytics-page'
@@ -70,14 +69,7 @@ function AppRoutes() {
           }
         />
         <Route path="/inventory" element={<InventoryPage />} />
-        <Route
-          path="/unallocated"
-          element={
-            <Guard permission="purchases.view">
-              <UnallocatedPage />
-            </Guard>
-          }
-        />
+        <Route path="/unallocated" element={<Navigate to="/inventory" replace />} />
         <Route
           path="/suppliers"
           element={

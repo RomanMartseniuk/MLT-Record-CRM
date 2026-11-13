@@ -8,7 +8,6 @@ import { Field, Input, Label, Textarea } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ErrorNote, InfoNote, PageBody, PageHeader } from '@/components/common/page'
 import { productStock } from '@/domain/calc'
-import { isOrderLocked } from '@/domain/labels'
 import { createProduct, createPurchase } from '@/domain/ops'
 import { formatMoney, parseMoneyToKop, parseQty } from '@/lib/format'
 import { uid } from '@/lib/utils'
@@ -41,8 +40,6 @@ export function PurchaseNewPage() {
   const [comment, setComment] = useState('')
   const [receiptName, setReceiptName] = useState('')
   const [receiptPreview, setReceiptPreview] = useState('')
-  const [destination, setDestination] = useState<'warehouse' | 'order'>('warehouse')
-  const [orderId, setOrderId] = useState('')
   const [rows, setRows] = useState<ItemRow[]>(() => [emptyRow()])
   const [error, setError] = useState('')
 
@@ -58,7 +55,6 @@ export function PurchaseNewPage() {
     setNewCategoryId(db.categories.find((item) => item.kind === 'product' && item.active)?.id ?? '')
 
     const prefillProduct = searchParams.get('product')
-    const prefillOrder = searchParams.get('order')
     if (prefillProduct) {
       const info = productStock(db, prefillProduct)
       setRows([
@@ -70,10 +66,6 @@ export function PurchaseNewPage() {
           note: '',
         },
       ])
-    }
-    if (prefillOrder) {
-      setDestination('order')
-      setOrderId(prefillOrder)
     }
     // Префіл робимо один раз при відкритті сторінки.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,10 +82,6 @@ export function PurchaseNewPage() {
   const supplierOptions = db.suppliers
     .filter((item) => item.active)
     .map((item) => ({ value: item.id, label: item.name }))
-
-  const orderOptions = db.orders
-    .filter((item) => !isOrderLocked(db, item.rawStatus))
-    .map((item) => ({ value: item.id, label: `№ ${item.number} · ${item.malfunction.slice(0, 40)}` }))
 
   const totalKop = rows.reduce((acc, row) => {
     const qty = parseQty(row.qty)
@@ -152,8 +140,7 @@ export function PurchaseNewPage() {
           docNumber: docNumber.trim() || undefined,
           comment: comment.trim() || undefined,
           hasReceipt: Boolean(receiptName),
-          destination,
-          orderId: destination === 'order' ? orderId : undefined,
+          destination: 'warehouse',
           items,
         },
         currentUser.id,
@@ -166,10 +153,7 @@ export function PurchaseNewPage() {
     }
 
     toast('Закупівлю створено', {
-      description:
-        destination === 'order'
-          ? 'Позиції одразу додані у заявку, на склад вони не потрапили.'
-          : 'Позиції стали на склад окремими партіями зі своїми цінами.',
+      description: 'Позиції стали на склад окремими партіями зі своїми цінами.',
       tone: 'success',
     })
     navigate(`/purchases/${result.value.purchaseId}`)
@@ -336,53 +320,6 @@ export function PurchaseNewPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Призначення</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <label className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  checked={destination === 'warehouse'}
-                  onChange={() => setDestination('warehouse')}
-                  className="mt-1 accent-[var(--primary)]"
-                />
-                <span>
-                  <span className="block text-sm">На склад</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Позиції стають партіями на складі, у заявки нічого не розподіляється.
-                  </span>
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  checked={destination === 'order'}
-                  onChange={() => setDestination('order')}
-                  className="mt-1 accent-[var(--primary)]"
-                />
-                <span>
-                  <span className="block text-sm">У заявку</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Вкладення створюється одразу, у залишок складу позиція не потрапляє.
-                  </span>
-                </span>
-              </label>
-
-              {destination === 'order' ? (
-                <Field label="Заявка">
-                  <Select
-                    value={orderId}
-                    onValueChange={setOrderId}
-                    options={orderOptions}
-                    placeholder="Виберіть заявку"
-                  />
-                </Field>
-              ) : null}
-            </CardContent>
-          </Card>
-
           <ErrorNote>{error}</ErrorNote>
 
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -395,7 +332,7 @@ export function PurchaseNewPage() {
           </div>
 
           <InfoNote>
-            Якщо той самий товар приходить за іншою ціною, створюється окрема партія. Списання потім іде за FIFO.
+            Закупівля завжди потрапляє на склад. Розподілити її по заявках можна зі сторінки «Склад» або всередині заявки. Якщо той самий товар приходить за іншою ціною, створюється окрема партія, списання йде за FIFO.
           </InfoNote>
         </div>
       </div>

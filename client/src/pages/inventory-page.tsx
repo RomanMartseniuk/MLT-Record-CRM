@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ExternalLink, PackagePlus, PackageSearch, Plus, Search, SlidersHorizontal } from 'lucide-react'
+import { ExternalLink, PackagePlus, Plus, Search, Send, SlidersHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,9 +19,10 @@ import {
   TableWrap,
 } from '@/components/ui/table'
 import { ErrorNote, InfoNote, PageBody, PageHeader } from '@/components/common/page'
+import { AllocateProductDialog } from '@/components/allocation/allocate-product-dialog'
 import { PhotoTile } from '@/components/common/stat'
 import { StockBadge } from '@/components/common/status'
-import { productStock, totalStockValueKop, unallocatedRows } from '@/domain/calc'
+import { productStock, totalStockValueKop } from '@/domain/calc'
 import { adjustStock, createProduct, updateProduct } from '@/domain/ops'
 import { formatDate, formatMoney, formatQty, parseQty } from '@/lib/format'
 import { sortBy, uid } from '@/lib/utils'
@@ -258,6 +259,7 @@ export function InventoryPage() {
   const [categoryId, setCategoryId] = useState('all')
   const [onlyInStock, setOnlyInStock] = useState(isMobile)
   const [openProduct, setOpenProduct] = useState<Product | null>(null)
+  const [allocateFor, setAllocateFor] = useState<Product | null>(null)
 
   const [newOpen, setNewOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -292,7 +294,7 @@ export function InventoryPage() {
   }, [db, query, categoryId, onlyInStock])
 
   const stockValue = useMemo(() => totalStockValueKop(db), [db])
-  const unallocatedCount = useMemo(() => unallocatedRows(db).length, [db])
+  const inStockCount = useMemo(() => db.products.filter((p) => productStock(db, p.id).qty > 0).length, [db])
 
   const submitNewProduct = () => {
     if (!currentUser) return
@@ -372,15 +374,10 @@ export function InventoryPage() {
           <p className="text-xs text-muted-foreground">Позицій у довіднику</p>
           <p className="text-xl font-semibold tabular-nums">{db.products.length}</p>
         </Card>
-        <Link to="/unallocated">
-          <Card className="p-4 hover:border-foreground/30">
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <PackageSearch className="size-3" />
-              Нерозподілені позиції
-            </p>
-            <p className="text-xl font-semibold tabular-nums">{unallocatedCount}</p>
-          </Card>
-        </Link>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Товарів у наявності</p>
+          <p className="text-xl font-semibold tabular-nums">{inStockCount}</p>
+        </Card>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -435,16 +432,25 @@ export function InventoryPage() {
                   </span>
                   <span className="font-semibold tabular-nums">{formatMoney(row.stock.valueKop)}</span>
                 </div>
-                {has('purchases.create') ? (
-                  <Button
-                    variant="outline"
-                    size="touch"
-                    onClick={() => navigate(`/purchases/new?product=${row.product.id}`)}
-                  >
-                    <PackagePlus />
-                    Поповнити
-                  </Button>
-                ) : null}
+                <div className="flex gap-2">
+                  {has('allocations.create') && row.stock.qty > 0 ? (
+                    <Button size="touch" className="flex-1" onClick={() => setAllocateFor(row.product)}>
+                      <Send />
+                      Розподілити
+                    </Button>
+                  ) : null}
+                  {has('purchases.create') ? (
+                    <Button
+                      variant="outline"
+                      size="touch"
+                      className="flex-1"
+                      onClick={() => navigate(`/purchases/new?product=${row.product.id}`)}
+                    >
+                      <PackagePlus />
+                      Поповнити
+                    </Button>
+                  ) : null}
+                </div>
               </Card>
             ))
           )}
@@ -516,6 +522,11 @@ export function InventoryPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {has('allocations.create') && row.stock.qty > 0 ? (
+                            <Button size="sm" onClick={() => setAllocateFor(row.product)}>
+                              Розподілити
+                            </Button>
+                          ) : null}
                           {has('purchases.create') ? (
                             <Button
                               variant="outline"
@@ -559,6 +570,7 @@ export function InventoryPage() {
       </InfoNote>
 
       <ProductDrawer product={openProduct} onClose={() => setOpenProduct(null)} />
+      <AllocateProductDialog product={allocateFor} onClose={() => setAllocateFor(null)} />
 
       <Dialog
         open={newOpen}
