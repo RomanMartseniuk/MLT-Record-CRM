@@ -2,12 +2,34 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project in one paragraph
+
+**MLT Облік** is an internal system for a repair service center. It reads repair orders from RO App (read-only) and tracks purchases, warehouse batches and allocations of materials to orders, so each repair gets a reliable cost price. It does not replace RO App and does not manage repairs. The client prototype is done on mock data; the NestJS server is still the starter.
+
+## Read these first (`docs/`)
+
+- `docs/README.md`: reading order.
+- `docs/01-idea.md`: idea, decisions, post-spec changes.
+- `docs/02-spec.md`: the full spec (v1.1). Source of requirements.
+- `docs/03-backend-plan.md`: backend modules, invariants, step-by-step plan.
+- `docs/04-frontend-status.md`: what the client does now, pending fixes, what moves to the server.
+- `docs/05-source-description.md`: original developer description (reference only).
+
+Docs are in Russian, the UI is Ukrainian. If a requirement is unclear, ask the developer instead of guessing.
+
+## How to work in this repo
+
+- **The developer writes the server himself.** Default to planning, explaining, reviewing and answering questions for `server/`. Write server code only when asked, and then in small, reviewable pieces following `docs/03-backend-plan.md`.
+- Client changes are fine to implement directly, but follow the client rules below.
+- Keep `docs/` current: when a decision changes, update `docs/02-spec.md` (add a line to its changelog) and the other docs it affects.
+
 ## Repository layout
 
 Two independent npm projects with no root `package.json` or workspace. Run `npm install` in each one.
 
 - `client/`: React 19 + Vite + TypeScript prototype ("stage 1" per `client/README.md`). There is no backend. All data lives in the browser's `localStorage`.
-- `server/`: NestJS 12 app. It is still the default starter (`AppController` returns "Hello World!"). The business logic has not been moved here yet.
+- `server/`: NestJS 12 app. It is still the default starter (`AppController` returns "Hello World!"). The business logic has not been moved here yet. Target stack: NestJS, PostgreSQL, Prisma, REST, JWT.
+- `docs/`: spec, plan and decisions (see above).
 
 ## Commands
 
@@ -48,6 +70,14 @@ These rules are enforced in `domain/`, so keep them when changing code there. Th
 - Negative stock is forbidden. The only exception is a manual `inventory.adjust`, which requires a reason.
 - Financial records are never deleted. Use cancel, return, or adjust instead.
 - Changing allocations on a closed order requires the `allocations.edit_closed` permission and a reason.
+
+## Decisions that override older assumptions
+
+- "Unallocated" and "in stock" are the same thing. There is no unallocated page or separate unallocated price. The Inventory page has a per-product "Розподілити" button; price comes from FIFO.
+- A purchase created on the "Нова закупівля" page always goes to the warehouse. A purchase straight into an order is created only from the allocation dialog inside an order.
+- Colors come only from the CSS tokens built on the six-color palette `#06141B #11212D #253745 #4A5C6A #9BA8AB #CCD0CF`. Dark theme is the default.
+- Only cost price is shown in analytics (no margin). RO App is read-only, never written to.
+- Mobile design is to be redone later; do not invest in polishing it before the developer asks.
 
 ## Language
 
