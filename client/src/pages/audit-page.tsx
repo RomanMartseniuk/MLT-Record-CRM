@@ -1,10 +1,21 @@
+/**
+ * Operations journal: who did what and when, with "before → after" and the
+ * reason. Entries are never edited or deleted (corrections are new entries).
+ *
+ * The server returns the entries of the chosen period, newest first; the page
+ * narrows them by action, user and text and pages the result.
+ */
+
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Search } from 'lucide-react'
+import { useAudit, useReference } from '@/api'
+import type { AuditAction, DateRange } from '@/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { TableSkeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -17,18 +28,16 @@ import {
 } from '@/components/ui/table'
 import { InfoNote, PageBody, PageHeader } from '@/components/common/page'
 import { PeriodFilter } from '@/components/common/period-filter'
-import { inRange, rangeFor } from '@/domain/calc'
-import type { DateRange, PeriodKey } from '@/domain/calc'
-import { AUDIT_ACTION_LABELS } from '@/domain/labels'
 import { formatDateTime } from '@/lib/format'
-import { useDb } from '@/store/db-store'
-import type { AuditAction } from '@/domain/types'
+import { AUDIT_ACTION_LABELS } from '@/lib/labels'
+import { rangeFor } from '@/lib/period'
+import type { PeriodKey } from '@/lib/period'
 
 const ACTIONS = Object.keys(AUDIT_ACTION_LABELS) as AuditAction[]
 const PAGE_SIZE = 25
 
 export function AuditPage() {
-  const { db } = useDb()
+  const { data: reference } = useReference()
   const [period, setPeriod] = useState<PeriodKey>('all')
   const [custom, setCustom] = useState<DateRange>(() => rangeFor('month'))
   const [action, setAction] = useState('all')
@@ -38,21 +47,19 @@ export function AuditPage() {
   const [page, setPage] = useState(0)
 
   const range = useMemo(() => rangeFor(period, custom), [period, custom])
+  const { data: entries, isLoading } = useAudit(range)
 
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return db.audit.filter((entry) => {
-      if (!inRange(entry.at, range)) return false
-      if (action !== 'all' && entry.action !== action) return false
-      if (userId !== 'all' && entry.userId !== userId) return false
-      if (!needle) return true
-      return (
-        entry.objectLabel.toLowerCase().includes(needle) ||
-        entry.objectType.toLowerCase().includes(needle) ||
-        (entry.reason ?? '').toLowerCase().includes(needle)
-      )
-    })
-  }, [db.audit, range, action, userId, query])
+  const needle = query.trim().toLowerCase()
+  const rows = (entries ?? []).filter(({ entry }) => {
+    if (action !== 'all' && entry.action !== action) return false
+    if (userId !== 'all' && entry.userId !== userId) return false
+    if (!needle) return true
+    return (
+      entry.objectLabel.toLowerCase().includes(needle) ||
+      entry.objectType.toLowerCase().includes(needle) ||
+      (entry.reason ?? '').toLowerCase().includes(needle)
+    )
+  })
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
@@ -104,89 +111,92 @@ export function AuditPage() {
           }}
           options={[
             { value: 'all', label: 'Усі користувачі' },
-            ...db.users.map((user) => ({ value: user.id, label: user.fullName })),
+            ...(reference?.employees ?? []).map((user) => ({ value: user.id, label: user.name })),
           ]}
         />
       </div>
 
       <InfoNote>
-        Фінансові записи не видаляються фізично. Виправлення — це скасування, сторно або коригування, і кожне з
-        них лишає слід тут.
+        Фінансові записи не видаляються фізично. Виправлення — це скасування, сторно або коригування, і кожне з них
+        лишає слід тут.
       </InfoNote>
 
       <Card>
-        <TableWrap>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Час</TableHead>
-                <TableHead>Користувач</TableHead>
-                <TableHead>Операція</TableHead>
-                <TableHead>Обʼєкт</TableHead>
-                <TableHead>Було → стало</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pageRows.length === 0 ? (
-                <TableEmpty colSpan={6}>Записів за цими умовами немає</TableEmpty>
-              ) : (
-                pageRows.map((entry) => {
-                  const user = db.users.find((item) => item.id === entry.userId)
-                  const isOpen = expanded === entry.id
-                  return (
-                    <TableRow key={entry.id}>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => setExpanded(isOpen ? '' : entry.id)}
-                          aria-label={isOpen ? 'Згорнути' : 'Розгорнути'}
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                        </button>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDateTime(entry.at)}
-                      </TableCell>
-                      <TableCell className="max-w-40 truncate">{user ? user.fullName : 'Система'}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{AUDIT_ACTION_LABELS[entry.action]}</Badge>
-                      </TableCell>
-                      <TableCell className="max-w-56 truncate">
-                        <span className="text-xs text-muted-foreground">{entry.objectType}: </span>
-                        {entry.objectLabel}
-                      </TableCell>
-                      <TableCell className="max-w-80">
-                        {isOpen ? (
-                          <div className="flex flex-col gap-1 py-1 text-xs">
-                            <span>
-                              <span className="text-muted-foreground">Було: </span>
-                              {entry.before ?? '—'}
-                            </span>
-                            <span>
-                              <span className="text-muted-foreground">Стало: </span>
+        {isLoading ? (
+          <TableSkeleton rows={8} cols={5} />
+        ) : (
+          <TableWrap>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Час</TableHead>
+                  <TableHead>Користувач</TableHead>
+                  <TableHead>Операція</TableHead>
+                  <TableHead>Обʼєкт</TableHead>
+                  <TableHead>Було → стало</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageRows.length === 0 ? (
+                  <TableEmpty colSpan={6}>Записів за цими умовами немає</TableEmpty>
+                ) : (
+                  pageRows.map(({ entry, userName }) => {
+                    const isOpen = expanded === entry.id
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell>
+                          <button
+                            type="button"
+                            onClick={() => setExpanded(isOpen ? '' : entry.id)}
+                            aria-label={isOpen ? 'Згорнути' : 'Розгорнути'}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          </button>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {formatDateTime(entry.at)}
+                        </TableCell>
+                        <TableCell className="max-w-40 truncate">{userName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{AUDIT_ACTION_LABELS[entry.action]}</Badge>
+                        </TableCell>
+                        <TableCell className="max-w-56 truncate">
+                          <span className="text-xs text-muted-foreground">{entry.objectType}: </span>
+                          {entry.objectLabel}
+                        </TableCell>
+                        <TableCell className="max-w-80">
+                          {isOpen ? (
+                            <div className="flex flex-col gap-1 py-1 text-xs">
+                              <span>
+                                <span className="text-muted-foreground">Було: </span>
+                                {entry.before ?? '—'}
+                              </span>
+                              <span>
+                                <span className="text-muted-foreground">Стало: </span>
+                                {entry.after ?? '—'}
+                              </span>
+                              <span>
+                                <span className="text-muted-foreground">Причина: </span>
+                                {entry.reason ?? '—'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {entry.before ? `${entry.before} → ` : ''}
                               {entry.after ?? '—'}
                             </span>
-                            <span>
-                              <span className="text-muted-foreground">Причина: </span>
-                              {entry.reason ?? '—'}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {entry.before ? `${entry.before} → ` : ''}
-                            {entry.after ?? '—'}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
-        </TableWrap>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableWrap>
+        )}
       </Card>
 
       <div className="flex items-center justify-between gap-2">

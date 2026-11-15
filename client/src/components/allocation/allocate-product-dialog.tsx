@@ -1,74 +1,70 @@
-import { useEffect, useMemo, useState } from 'react'
+/**
+ * Allocate a product from the warehouse into an order ("Розподілити").
+ *
+ * The user picks an order and a quantity; the price is never typed: the
+ * server takes it from the warehouse batches by FIFO. The approximate sum
+ * shown here is the server's FIFO preview, not a calculation in the UI.
+ */
+
+import { useState } from 'react'
+import { useAddAllocation, useFifoPreview, useOrders, useStock } from '@/api'
+import type { Product } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ErrorNote, InfoNote } from '@/components/common/page'
-import { planFifo, productStock, fifoBatches } from '@/domain/calc'
-import { isOrderLocked } from '@/domain/labels'
-import { addAllocation } from '@/domain/ops'
 import { formatMoney, formatQty, parseQty } from '@/lib/format'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
-import type { Product } from '@/domain/types'
+import { useSingleFlight } from '@/lib/use-single-flight'
+import { useUi } from '@/store/ui-context'
 
-/** Розподіл товару зі складу в заявку. Ціну визначає FIFO. */
-export function AllocateProductDialog({ product, onClose }: { product: Product | null; onClose: () => void }) {
-  const { db, apply, currentUser } = useDb()
+/** Mount it only for a chosen product: the form state starts fresh on every mount. */
+export function AllocateProductDialog({ product, onClose }: { product: Product; onClose: () => void }) {
+  const { data: orders = [] } = useOrders()
+  const { data: stockRows } = useStock()
+  const addAllocation = useAddAllocation()
   const { toast } = useUi()
+  const { run, pending } = useSingleFlight()
+
   const [orderId, setOrderId] = useState('')
   const [qtyInput, setQtyInput] = useState('1')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!product) return
-    setOrderId('')
-    setQtyInput('1')
-    setError('')
-  }, [product])
+  // Only orders that are not issued can receive a plain allocation.
+  const orderOptions = orders
+    .filter((row) => !row.locked)
+    .map((row) => ({ value: row.order.id, label: `№ ${row.order.number} · ${row.order.malfunction.slice(0, 40)}` }))
 
-  const orderOptions = useMemo(
-    () =>
-      db.orders
-        .filter((order) => !isOrderLocked(db, order.rawStatus))
-        .map((order) => ({ value: order.id, label: `№ ${order.number} · ${order.malfunction.slice(0, 40)}` })),
-    [db],
-  )
-
-  if (!product) return null
-
-  const stock = productStock(db, product.id)
+  const stockQty = stockRows?.find((row) => row.product.id === product.id)?.qty ?? 0
   const qty = parseQty(qtyInput)
-  const plan = qty ? planFifo(fifoBatches(db, product.id), qty) : null
+  const { data: plan } = useFifoPreview(product.id, qty)
 
-  const submit = () => {
-    if (!currentUser) return
-    if (!qty) {
-      setError('Вкажіть кількість, більшу за нуль.')
-      return
-    }
-    if (!orderId) {
-      setError('Виберіть заявку.')
-      return
-    }
-    if (qty > stock.qty) {
-      setError(`На складі лише ${formatQty(stock.qty, product.unit)}.`)
-      return
-    }
-    const result = apply((draft) =>
-      addAllocation(draft, { orderId, productId: product.id, qty }, currentUser.id),
-    )
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    const order = db.orders.find((item) => item.id === orderId)
-    toast('Товар розподілено', {
-      description: `${product.name} → заявка № ${order?.number}. Сума ${formatMoney(result.value.totalKop)}.`,
-      tone: 'success',
+  const submit = () =>
+    run(async () => {
+      if (!qty) {
+        setError('Вкажіть кількість, більшу за нуль.')
+        return
+      }
+      if (!orderId) {
+        setError('Виберіть заявку.')
+        return
+      }
+      if (qty > stockQty) {
+        setError(`На складі лише ${formatQty(stockQty, product.unit)}.`)
+        return
+      }
+      const result = await addAllocation.mutateAsync({ orderId, productId: product.id, qty })
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      const order = orders.find((row) => row.order.id === orderId)
+      toast('Товар розподілено', {
+        description: `${product.name} → заявка № ${order?.order.number}. Сума ${formatMoney(result.value.totalKop)}.`,
+        tone: 'success',
+      })
+      onClose()
     })
-    onClose()
-  }
 
   return (
     <Dialog
@@ -82,14 +78,14 @@ export function AllocateProductDialog({ product, onClose }: { product: Product |
           <Button variant="outline" onClick={onClose}>
             Скасувати
           </Button>
-          <Button onClick={submit}>Розподілити</Button>
+          <Button onClick={() => void submit()} disabled={pending}>
+            Розподілити
+          </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        <InfoNote>
-          Ціна візьметься автоматично за FIFO. На складі {formatQty(stock.qty, product.unit)}.
-        </InfoNote>
+        <InfoNote>Ціна візьметься автоматично за FIFO. На складі {formatQty(stockQty, product.unit)}.</InfoNote>
         <Field label="Заявка">
           <Select value={orderId} onValueChange={setOrderId} options={orderOptions} placeholder="Виберіть заявку" />
         </Field>

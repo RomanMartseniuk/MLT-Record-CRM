@@ -1,3 +1,7 @@
+/**
+ * Shown for an unknown address.
+ */
+
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { EmptyState, PageBody, PageHeader } from '@/components/common/page'

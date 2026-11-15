@@ -1,11 +1,19 @@
+/**
+ * Routes of the app and its two guards.
+ *
+ * - RequireAuth sends signed-out users to /login;
+ * - Guard shows "no access" for a page the user lacks the permission for.
+ * The server checks permissions again on every request.
+ */
+
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
-import { NoAccess } from '@/components/common/page'
+import { FullPageLoading, NoAccess } from '@/components/common/page'
 import { Toaster } from '@/components/ui/toaster'
-import { DbProvider, useDb } from '@/store/db-store'
+import { useSession } from '@/api'
+import type { Permission } from '@/api'
 import { UiProvider } from '@/store/ui-store'
-import type { Permission } from '@/domain/types'
 
 import { LoginPage } from '@/pages/login-page'
 import { DashboardPage } from '@/pages/dashboard-page'
@@ -24,15 +32,22 @@ import { IntegrationPage } from '@/pages/integration-page'
 import { SettingsPage } from '@/pages/settings-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 
+/**
+ * Lets only signed-in users through to the app shell.
+ * While the session is still being loaded nothing is decided yet, so a
+ * placeholder is shown instead of flashing the login page.
+ */
 function RequireAuth() {
-  const { currentUser } = useDb()
-  if (!currentUser) return <Navigate to="/login" replace />
+  const { session, isLoading } = useSession()
+  if (isLoading) return <FullPageLoading />
+  if (!session) return <Navigate to="/login" replace />
   return <AppShell />
 }
 
+/** Shows the page only to users who have the permission (the server checks it again). */
 function Guard({ permission, children }: { permission: Permission; children: ReactNode }) {
-  const { has } = useDb()
-  if (!has(permission)) return <NoAccess />
+  const { can } = useSession()
+  if (!can(permission)) return <NoAccess />
   return <>{children}</>
 }
 
@@ -135,12 +150,10 @@ function AppRoutes() {
 export default function App() {
   return (
     <UiProvider>
-      <DbProvider>
-        <BrowserRouter>
-          <AppRoutes />
-          <Toaster />
-        </BrowserRouter>
-      </DbProvider>
+      <BrowserRouter>
+        <AppRoutes />
+        <Toaster />
+      </BrowserRouter>
     </UiProvider>
   )
 }

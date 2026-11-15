@@ -5,7 +5,7 @@ export function Skeleton({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('animate-pulse rounded-md bg-muted', className)} {...props} />
 }
 
-/** Скелет таблиці на час завантаження. */
+/** A table skeleton shown while data is loading. */
 export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: number }) {
   return (
     <div className="flex flex-col gap-2 p-2">

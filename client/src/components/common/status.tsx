@@ -1,20 +1,22 @@
 import { AlertCircle, Check, CircleDot, Clock, Lock, PackageX } from 'lucide-react'
+import { useReference } from '@/api'
+import type { AllocationStatus, PurchaseDestination, PurchaseStatus } from '@/api'
 import { Badge } from '@/components/ui/badge'
-import {
-  ALLOCATION_STATUS_LABELS,
-  DESTINATION_LABELS,
-  PURCHASE_STATUS_LABELS,
-  orderStatusCode,
-  orderStatusLabel,
-} from '@/domain/labels'
-import { useDb } from '@/store/db-store'
-import type { AllocationStatus, PurchaseDestination, PurchaseStatus } from '@/domain/types'
+import { ALLOCATION_STATUS_LABELS, DESTINATION_LABELS, PURCHASE_STATUS_LABELS } from '@/lib/labels'
 
-/** Статус заявки з RO App. Невідоме значення показуємо як є, нейтральним бейджем. */
+/**
+ * Order status from RO App. The raw status is turned into a local code and a
+ * label with the RO App status mapping from the reference lists. An unknown
+ * status is shown as is with a neutral warning badge.
+ */
 export function OrderStatusBadge({ rawStatus }: { rawStatus: string }) {
-  const { db } = useDb()
-  const code = orderStatusCode(db, rawStatus)
-  const label = orderStatusLabel(db, rawStatus)
+  const { data: reference } = useReference()
+  const mapping = reference?.statusMappings.find((item) => item.raw === rawStatus)
+  const code = mapping ? mapping.local : null
+  const label = mapping ? mapping.label : rawStatus
+
+  // The mapping is still loading: show the raw status quietly instead of a warning.
+  if (!reference) return <Badge variant="outline">{rawStatus}</Badge>
 
   if (code === 'closed') {
     return (
@@ -91,7 +93,7 @@ export function AllocationStatusBadge({ status }: { status: AllocationStatus }) 
   return <Badge variant="destructive">{label}</Badge>
 }
 
-/** Нульовий залишок не ховає товар — він лишається в списку з цією позначкою. */
+/** A zero stock does not hide the product: it stays in the list with this badge. */
 export function StockBadge({ qty }: { qty: number }) {
   if (qty > 0) {
     return (

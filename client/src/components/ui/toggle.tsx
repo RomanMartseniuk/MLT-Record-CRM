@@ -1,3 +1,7 @@
+/**
+ * Toggle controls: Checkbox and Switch (a label with an optional description).
+ */
+
 import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'

@@ -1,4 +1,9 @@
-import { useMemo, useState } from 'react'
+/**
+ * Suppliers reference page with purchase totals. Suppliers are never deleted,
+ * only deactivated, so their purchase history is kept.
+ */
+
+import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,20 +21,22 @@ import {
   TableWrap,
 } from '@/components/ui/table'
 import { ErrorNote, InfoNote, PageBody, PageHeader } from '@/components/common/page'
-import { purchaseTotalKop } from '@/domain/calc'
-import { createSupplier, updateSupplier } from '@/domain/ops'
+import { TableSkeleton } from '@/components/ui/skeleton'
+import { useCreateSupplier, useSession, useSuppliers, useUpdateSupplier } from '@/api'
+import type { SupplierRow } from '@/api'
 import { formatDate, formatMoney } from '@/lib/format'
-import { sortBy, sum } from '@/lib/utils'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
-import type { Supplier } from '@/domain/types'
+import { useSingleFlight } from '@/lib/use-single-flight'
+import { useUi } from '@/store/ui-context'
 
 export function SuppliersPage() {
-  const { db, apply, currentUser, has } = useDb()
+  const { data: suppliers, isLoading } = useSuppliers()
+  const createSupplier = useCreateSupplier()
+  const updateSupplier = useUpdateSupplier()
+  const { can } = useSession()
   const { isMobile, toast } = useUi()
 
   const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<Supplier | null>(null)
+  const [editing, setEditing] = useState<SupplierRow | null>(null)
   const [name, setName] = useState('')
   const [contact, setContact] = useState('')
   const [phone, setPhone] = useState('')
@@ -38,21 +45,10 @@ export function SuppliersPage() {
   const [comment, setComment] = useState('')
   const [error, setError] = useState('')
 
-  const rows = useMemo(() => {
-    const prepared = db.suppliers.map((supplier) => {
-      const purchases = db.purchases.filter(
-        (purchase) => purchase.supplierId === supplier.id && !purchase.cancelled,
-      )
-      const lastDate = purchases.length > 0 ? sortBy(purchases, (item) => item.date)[purchases.length - 1].date : null
-      return {
-        supplier,
-        count: purchases.length,
-        totalKop: sum(purchases.map((purchase) => purchaseTotalKop(purchase))),
-        lastDate,
-      }
-    })
-    return sortBy(prepared, (row) => -row.totalKop)
-  }, [db])
+  /** Rows come sorted (biggest total first) and with purchase totals from the server. */
+  const rows = suppliers ?? []
+  // One write at a time: a repeated click while a request is running is ignored.
+  const { run, pending } = useSingleFlight()
 
   const openCreate = () => {
     setEditing(null)
@@ -66,7 +62,7 @@ export function SuppliersPage() {
     setFormOpen(true)
   }
 
-  const openEdit = (supplier: Supplier) => {
+  const openEdit = (supplier: SupplierRow) => {
     setEditing(supplier)
     setName(supplier.name)
     setContact(supplier.contact ?? '')
@@ -78,33 +74,38 @@ export function SuppliersPage() {
     setFormOpen(true)
   }
 
-  const submit = () => {
-    if (!currentUser) return
-    const payload = {
-      name,
-      contact: contact.trim() || undefined,
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
-      comment: comment.trim() || undefined,
-    }
-    const result = editing
-      ? apply((draft) => updateSupplier(draft, editing.id, payload, currentUser.id))
-      : apply((draft) => createSupplier(draft, payload, currentUser.id))
+  /** Creates or updates the supplier; a business error is shown in the dialog. */
+  const submit = () =>
+    run(async () => {
+      const payload = {
+        name,
+        contact: contact.trim() || undefined,
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        comment: comment.trim() || undefined,
+      }
+      const result = editing
+        ? await updateSupplier.mutateAsync({ id: editing.id, patch: payload })
+        : await createSupplier.mutateAsync(payload)
 
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    toast(editing ? 'Постачальника оновлено' : 'Постачальника створено', { tone: 'success' })
-    setFormOpen(false)
-  }
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      toast(editing ? 'Постачальника оновлено' : 'Постачальника створено', { tone: 'success' })
+      setFormOpen(false)
+    })
 
-  const toggleActive = (supplier: Supplier) => {
-    if (!currentUser) return
-    apply((draft) => updateSupplier(draft, supplier.id, { active: !supplier.active }, currentUser.id))
-    toast(supplier.active ? 'Постачальника деактивовано' : 'Постачальника активовано', { tone: 'success' })
-  }
+  const toggleActive = (supplier: SupplierRow) =>
+    run(async () => {
+      const result = await updateSupplier.mutateAsync({ id: supplier.id, patch: { active: !supplier.active } })
+      if (!result.ok) {
+        toast(result.error, { tone: 'error' })
+        return
+      }
+      toast(supplier.active ? 'Постачальника деактивовано' : 'Постачальника активовано', { tone: 'success' })
+    })
 
   return (
     <PageBody>
@@ -112,7 +113,7 @@ export function SuppliersPage() {
         title="Постачальники"
         description="Довідник. Видалення немає — тільки деактивація, історія закупівель зберігається."
         actions={
-          has('purchases.create') ? (
+          can('purchases.create') ? (
             <Button size={isMobile ? 'touch' : 'default'} onClick={openCreate}>
               <Plus />
               Новий постачальник
@@ -122,6 +123,9 @@ export function SuppliersPage() {
       />
 
       <Card>
+        {isLoading ? (
+          <TableSkeleton rows={5} cols={6} />
+        ) : (
         <TableWrap>
           <Table>
             <TableHeader>
@@ -141,32 +145,37 @@ export function SuppliersPage() {
                 <TableEmpty colSpan={8}>Постачальників ще немає</TableEmpty>
               ) : (
                 rows.map((row) => (
-                  <TableRow key={row.supplier.id}>
-                    <TableCell className="font-medium">{row.supplier.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.supplier.contact ?? '—'}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.supplier.phone ?? '—'}</TableCell>
-                    <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.contact ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.phone ?? '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.purchasesCount}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(row.totalKop)}
+                      {formatMoney(row.purchasesTotalKop)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {row.lastDate ? formatDate(row.lastDate) : '—'}
+                      {row.lastPurchaseDate ? formatDate(row.lastPurchaseDate) : '—'}
                     </TableCell>
                     <TableCell>
-                      {row.supplier.active ? (
+                      {row.active ? (
                         <Badge variant="outline">Активний</Badge>
                       ) : (
                         <Badge variant="secondary">Неактивний</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {has('purchases.create') ? (
+                      {can('purchases.create') ? (
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(row.supplier)}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>
                             Змінити
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => toggleActive(row.supplier)}>
-                            {row.supplier.active ? 'Деактивувати' : 'Активувати'}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => void toggleActive(row)}
+                          >
+                            {row.active ? 'Деактивувати' : 'Активувати'}
                           </Button>
                         </div>
                       ) : null}
@@ -177,6 +186,7 @@ export function SuppliersPage() {
             </TableBody>
           </Table>
         </TableWrap>
+        )}
       </Card>
 
       <InfoNote>
@@ -193,7 +203,9 @@ export function SuppliersPage() {
             <Button variant="outline" onClick={() => setFormOpen(false)}>
               Скасувати
             </Button>
-            <Button onClick={submit}>{editing ? 'Зберегти' : 'Створити'}</Button>
+            <Button onClick={() => void submit()} disabled={pending}>
+              {editing ? 'Зберегти' : 'Створити'}
+            </Button>
           </>
         }
       >

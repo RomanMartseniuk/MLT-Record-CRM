@@ -1,3 +1,7 @@
+/**
+ * A simple tab strip: the parent keeps the selected value and renders the content.
+ */
+
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 

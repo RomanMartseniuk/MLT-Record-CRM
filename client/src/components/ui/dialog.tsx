@@ -1,8 +1,12 @@
+/**
+ * The Dialog primitive: a modal window on desktop, a full-screen sheet on mobile.
+ */
+
 import { useEffect } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useUi } from '@/store/ui-store'
+import { useUi } from '@/store/ui-context'
 import { Button } from './button'
 
 export interface DialogProps {
@@ -12,7 +16,7 @@ export interface DialogProps {
   description?: string
   children: ReactNode
   footer?: ReactNode
-  /** Ширина на десктопі. На мобільному завжди повноекранний лист. */
+  /** Width on desktop. On mobile it is always a full-screen sheet. */
   width?: 'sm' | 'md' | 'lg'
 }
 
@@ -23,8 +27,8 @@ const WIDTHS: Record<'sm' | 'md' | 'lg', string> = {
 }
 
 /**
- * Модальне вікно на десктопі та повноекранний лист на мобільному.
- * Закривається по Escape і по кліку на підложку.
+ * A modal window on desktop and a full-screen sheet on mobile.
+ * Closes on Escape and on a click on the backdrop.
  */
 export function Dialog({ open, onClose, title, description, children, footer, width = 'md' }: DialogProps) {
   const { isMobile } = useUi()

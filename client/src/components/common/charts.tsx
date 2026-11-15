@@ -1,3 +1,7 @@
+/**
+ * Chart components (Recharts), coloured only with the design tokens.
+ */
+
 import {
   Bar,
   BarChart,
@@ -13,7 +17,7 @@ import {
   YAxis,
 } from 'recharts'
 import { formatMoneyCompact } from '@/lib/format'
-import type { NamedValue, SeriesPoint } from '@/domain/calc'
+import type { NamedValue, SeriesPoint } from '@/api'
 
 const CHART_COLORS = [
   'var(--chart-1)',
@@ -47,7 +51,7 @@ function MoneyTooltip(props: { active?: boolean; payload?: TooltipPayloadItem[];
   )
 }
 
-/** Закупівлі та вкладення по періодах. Дві серії поруч, бо це різні події. */
+/** Purchases and allocations per period. Two series side by side, because they are different events. */
 export function MoneyBarChart({ data }: { data: SeriesPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>

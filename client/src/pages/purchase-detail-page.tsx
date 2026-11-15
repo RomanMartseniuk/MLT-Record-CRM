@@ -1,9 +1,20 @@
+/**
+ * One purchase: its items, finances, document data and history.
+ *
+ * Everything shown (totals, statuses, "allocated" / "available" per item,
+ * whether it can be cancelled) is computed by the server; the page renders
+ * it. Cancelling never deletes the purchase: it stays with the status
+ * "Скасована" and a mandatory reason.
+ */
+
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Ban, Camera, FileText } from 'lucide-react'
+import { useCancelPurchase, usePurchase, useSession } from '@/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -16,31 +27,28 @@ import {
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { EmptyState, InfoNote, PageBody, PageHeader } from '@/components/common/page'
 import { DestinationBadge, PurchaseStatusBadge } from '@/components/common/status'
-import {
-  canCancelPurchase,
-  itemBatch,
-  purchaseAllocatedKop,
-  purchaseItemTotalKop,
-  purchaseStatus,
-  purchaseTotalKop,
-  purchaseRemainingKop,
-  roundQty,
-} from '@/domain/calc'
-import { AUDIT_ACTION_LABELS } from '@/domain/labels'
-import { cancelPurchase } from '@/domain/ops'
 import { formatDate, formatDateTime, formatMoney, formatQty } from '@/lib/format'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
+import { AUDIT_ACTION_LABELS } from '@/lib/labels'
+import { useUi } from '@/store/ui-context'
 
 export function PurchaseDetailPage() {
   const { id } = useParams()
-  const { db, apply, currentUser, has } = useDb()
+  const { data: detail, isLoading } = usePurchase(id)
+  const cancelPurchase = useCancelPurchase()
+  const { can } = useSession()
   const { toast } = useUi()
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  const purchase = db.purchases.find((item) => item.id === id)
+  if (isLoading) {
+    return (
+      <PageBody>
+        <PageHeader title="Закупівля" crumbs={[{ label: 'Закупівлі', to: '/purchases' }]} />
+        <Skeleton className="h-64 w-full" />
+      </PageBody>
+    )
+  }
 
-  if (!purchase) {
+  if (!detail) {
     return (
       <PageBody>
         <PageHeader title="Закупівлю не знайдено" crumbs={[{ label: 'Закупівлі', to: '/purchases' }]} />
@@ -49,20 +57,12 @@ export function PurchaseDetailPage() {
     )
   }
 
-  const supplier = db.suppliers.find((item) => item.id === purchase.supplierId)
-  const author = db.users.find((item) => item.id === purchase.createdById)
-  const order = purchase.orderId ? db.orders.find((item) => item.id === purchase.orderId) : null
-  const status = purchaseStatus(db, purchase)
-  const totalKop = purchaseTotalKop(purchase)
-  const allocatedKop = purchaseAllocatedKop(db, purchase)
-  const remainingKop = purchaseRemainingKop(db, purchase)
-  const canCancel = has('purchases.create') && canCancelPurchase(db, purchase)
+  const { purchase } = detail
+  const mayManage = can('purchases.create')
 
-  const auditEntries = db.audit.filter((entry) => entry.objectId === purchase.id)
-
-  const doCancel = (reason: string) => {
-    if (!currentUser) return { ok: false, error: 'Немає користувача.' }
-    const result = apply((draft) => cancelPurchase(draft, purchase.id, reason, currentUser.id))
+  /** Cancels the purchase; the reason is required by the dialog and by the server. */
+  const doCancel = async (reason: string) => {
+    const result = await cancelPurchase.mutateAsync({ id: purchase.id, reason })
     if (!result.ok) return { ok: false, error: result.error }
     toast('Закупівлю скасовано', {
       description: 'Запис залишився в системі зі статусом «Скасована».',
@@ -76,12 +76,12 @@ export function PurchaseDetailPage() {
       <PageHeader
         crumbs={[{ label: 'Закупівлі', to: '/purchases' }, { label: purchase.number }]}
         title={`Закупівля ${purchase.number}`}
-        description={supplier ? supplier.name : undefined}
+        description={detail.supplierName}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <PurchaseStatusBadge status={status} />
+            <PurchaseStatusBadge status={detail.status} />
             <DestinationBadge destination={purchase.destination} />
-            {canCancel ? (
+            {mayManage && detail.canCancel ? (
               <Button variant="outline" size="sm" onClick={() => setCancelOpen(true)}>
                 <Ban />
                 Скасувати
@@ -98,7 +98,7 @@ export function PurchaseDetailPage() {
         </InfoNote>
       ) : null}
 
-      {!purchase.cancelled && !canCancelPurchase(db, purchase) && has('purchases.create') ? (
+      {!purchase.cancelled && !detail.canCancel && mayManage ? (
         <InfoNote>
           З цієї закупівлі вже є вкладення, тому скасувати її не можна. Спочатку поверніть вкладення на склад.
         </InfoNote>
@@ -124,41 +124,25 @@ export function PurchaseDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {purchase.items.map((item) => {
-                    const product = db.products.find((candidate) => candidate.id === item.productId)
-                    const batch = itemBatch(db, item.id)
-                    const allocatedQty = batch ? roundQty(batch.qtyReceived - batch.qtyRemaining) : 0
-                    const availableQty = batch ? batch.qtyRemaining : 0
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">
-                          {product ? (
-                            <Link to="/inventory" className="hover:underline">
-                              {product.name}
-                            </Link>
-                          ) : (
-                            '—'
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatQty(item.qty, product?.unit)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(item.unitPriceKop)}</TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {formatMoney(purchaseItemTotalKop(item))}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {formatQty(allocatedQty, product?.unit)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatQty(availableQty, product?.unit)}
-                        </TableCell>
-                        <TableCell className="max-w-40 truncate text-xs text-muted-foreground">
-                          {item.note ?? '—'}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
+                  {detail.items.map((row) => (
+                    <TableRow key={row.item.id}>
+                      <TableCell className="font-medium">
+                        <Link to="/inventory" className="hover:underline">
+                          {row.productName}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(row.item.qty, row.unit)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(row.item.unitPriceKop)}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatMoney(row.totalKop)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatQty(row.allocatedQty, row.unit)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(row.availableQty, row.unit)}</TableCell>
+                      <TableCell className="max-w-40 truncate text-xs text-muted-foreground">
+                        {row.item.note ?? '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableWrap>
@@ -173,18 +157,19 @@ export function PurchaseDetailPage() {
             <CardContent className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between">
                 <span className="text-xs text-muted-foreground">Загальна сума</span>
-                <span className="text-xl font-semibold tabular-nums">{formatMoney(totalKop)}</span>
+                <span className="text-xl font-semibold tabular-nums">{formatMoney(detail.totalKop)}</span>
               </div>
               <div className="flex items-baseline justify-between">
                 <span className="text-xs text-muted-foreground">Розподілено по заявках</span>
-                <span className="text-sm tabular-nums">{formatMoney(allocatedKop)}</span>
+                <span className="text-sm tabular-nums">{formatMoney(detail.allocatedKop)}</span>
               </div>
               <div className="flex items-baseline justify-between">
                 <span className="text-xs text-muted-foreground">Залишок на складі</span>
-                <span className="text-sm tabular-nums">{formatMoney(remainingKop)}</span>
+                <span className="text-sm tabular-nums">{formatMoney(detail.remainingKop)}</span>
               </div>
               <InfoNote className="mt-2">
-                Залишок закупівлі — це і є товар на складі за ціною цієї партії. З розподіленою частиною ці суми не додаються.
+                Залишок закупівлі — це і є товар на складі за ціною цієї партії. З розподіленою частиною ці суми не
+                додаються.
               </InfoNote>
             </CardContent>
           </Card>
@@ -200,7 +185,7 @@ export function PurchaseDetailPage() {
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">Постачальник</span>
-                <span className="text-right">{supplier ? supplier.name : '—'}</span>
+                <span className="text-right">{detail.supplierName}</span>
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">Номер документа</span>
@@ -211,13 +196,13 @@ export function PurchaseDetailPage() {
               </div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">Автор</span>
-                <span>{author ? author.fullName : '—'}</span>
+                <span>{detail.createdByName}</span>
               </div>
-              {order ? (
+              {purchase.orderId ? (
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs text-muted-foreground">Заявка</span>
-                  <Link to={`/orders/${order.id}`} className="hover:underline">
-                    № {order.number}
+                  <Link to={`/orders/${purchase.orderId}`} className="hover:underline">
+                    № {detail.orderNumber}
                   </Link>
                 </div>
               ) : null}
@@ -241,26 +226,23 @@ export function PurchaseDetailPage() {
           <CardTitle>Історія</CardTitle>
         </CardHeader>
         <CardContent>
-          {auditEntries.length === 0 ? (
+          {detail.history.length === 0 ? (
             <EmptyState title="Записів ще немає" />
           ) : (
             <div className="flex flex-col">
-              {auditEntries.map((entry) => {
-                const user = db.users.find((item) => item.id === entry.userId)
-                return (
-                  <div key={entry.id} className="flex flex-col gap-0.5 border-b border-border py-2 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{AUDIT_ACTION_LABELS[entry.action]}</Badge>
-                      <span className="text-xs text-muted-foreground">{formatDateTime(entry.at)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {user ? user.fullName : 'Система'}
-                      {entry.after ? ` · ${entry.after}` : ''}
-                      {entry.reason ? ` · причина: ${entry.reason}` : ''}
-                    </p>
+              {detail.history.map(({ entry, userName }) => (
+                <div key={entry.id} className="flex flex-col gap-0.5 border-b border-border py-2 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{AUDIT_ACTION_LABELS[entry.action]}</Badge>
+                    <span className="text-xs text-muted-foreground">{formatDateTime(entry.at)}</span>
                   </div>
-                )
-              })}
+                  <p className="text-xs text-muted-foreground">
+                    {userName}
+                    {entry.after ? ` · ${entry.after}` : ''}
+                    {entry.reason ? ` · причина: ${entry.reason}` : ''}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

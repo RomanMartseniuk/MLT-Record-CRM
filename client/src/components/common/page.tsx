@@ -3,6 +3,18 @@ import { Link } from 'react-router-dom'
 import { ChevronRight, Inbox, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+
+/** Full-screen placeholder shown while the session is being checked. */
+export function FullPageLoading() {
+  return (
+    <div className="flex min-h-dvh flex-col gap-4 p-6" role="status" aria-label="Завантаження">
+      <Skeleton className="h-10 w-48" />
+      <Skeleton className="h-32 w-full max-w-3xl" />
+      <Skeleton className="h-32 w-full max-w-3xl" />
+    </div>
+  )
+}
 
 export interface Crumb {
   label: string

@@ -1,3 +1,8 @@
+/**
+ * Table primitives (Table, TableHeader, TableRow, TableCell, TableEmpty…)
+ * styled with the design tokens.
+ */
+
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 

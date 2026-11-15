@@ -1,45 +1,35 @@
+/**
+ * Cost analytics: average / minimum / maximum cost of a repair, breakdowns
+ * by equipment type, category, supplier and employee, and the trend.
+ *
+ * Only cost is shown (no margin, no profit). The filters are sent to the
+ * server, which returns every number and chart already computed, including
+ * the comparison with the preceding period.
+ */
+
 import { useMemo, useState } from 'react'
 import { Download } from 'lucide-react'
+import { EMPTY_FILTER, useAnalytics, useReference, useSession } from '@/api'
+import type { DateRange, OrderStatusCode } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select } from '@/components/ui/select'
+import { CardsSkeleton, Skeleton } from '@/components/ui/skeleton'
 import { HorizontalBars, TrendLineChart } from '@/components/common/charts'
 import { InfoNote, PageBody, PageHeader } from '@/components/common/page'
 import { PeriodFilter } from '@/components/common/period-filter'
 import { Stat } from '@/components/common/stat'
-import {
-  EMPTY_FILTER,
-  categoryBreakdown,
-  costByAssetType,
-  costByEmployee,
-  costBySupplier,
-  costStats,
-  filteredOrderIds,
-  moneySeries,
-  rangeFor,
-} from '@/domain/calc'
-import type { DateRange, PeriodKey } from '@/domain/calc'
-import { ORDER_STATUS_LABELS } from '@/domain/labels'
 import { formatMoney } from '@/lib/format'
-import { unique } from '@/lib/utils'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
-import type { OrderStatusCode } from '@/domain/types'
+import { ORDER_STATUS_LABELS } from '@/lib/labels'
+import { rangeFor } from '@/lib/period'
+import type { PeriodKey } from '@/lib/period'
+import { useUi } from '@/store/ui-context'
 
 const STATUS_ORDER: OrderStatusCode[] = ['inQueue', 'inWork', 'done', 'closed']
 
-function previousRange(range: DateRange): DateRange {
-  const from = new Date(range.from).getTime()
-  const to = new Date(range.to).getTime()
-  const length = to - from
-  return {
-    from: new Date(from - length).toISOString(),
-    to: new Date(from - 1).toISOString(),
-  }
-}
-
 export function AnalyticsPage() {
-  const { db, has } = useDb()
+  const { can } = useSession()
+  const { data: reference } = useReference()
   const { toast } = useUi()
 
   const [period, setPeriod] = useState<PeriodKey>('month')
@@ -55,35 +45,23 @@ export function AnalyticsPage() {
     () => ({ range, userId, categoryId, supplierId, assetType, status }),
     [range, userId, categoryId, supplierId, assetType, status],
   )
+  const { data, isLoading } = useAnalytics(filters)
 
-  const orderIds = useMemo(() => filteredOrderIds(db, filters), [db, filters])
-  const stats = useMemo(() => costStats(db, orderIds), [db, orderIds])
-
-  const prevRange = useMemo(() => previousRange(range), [range])
-  const prevOrderIds = useMemo(
-    () => filteredOrderIds(db, { ...filters, range: prevRange }),
-    [db, filters, prevRange],
-  )
-  const prevStats = useMemo(() => costStats(db, prevOrderIds), [db, prevOrderIds])
-
-  const byAssetType = useMemo(() => costByAssetType(db, orderIds), [db, orderIds])
-  const byCategory = useMemo(() => categoryBreakdown(db, range), [db, range])
-  const bySupplier = useMemo(() => costBySupplier(db, range), [db, range])
-  const byEmployee = useMemo(() => costByEmployee(db, range), [db, range])
-  const series = useMemo(() => moneySeries(db, range), [db, range])
-
-  const assetTypes = useMemo(() => unique(db.assets.map((asset) => asset.type)).sort(), [db.assets])
-
-  const delta = stats.totalKop - prevStats.totalKop
-  const deltaLabel =
-    prevStats.totalKop === 0
-      ? 'Попередній період без вкладень'
-      : `${delta >= 0 ? '+' : '−'}${formatMoney(Math.abs(delta))} до попереднього періоду`
-
+  /** The export is simulated in the prototype; the real one will honour the same filters. */
   const exportNote = (format: string) => {
     toast(`Експорт у ${format}`, {
       description: 'У прототипі експорт імітується. Фільтри враховуються при формуванні звіту.',
     })
+  }
+
+  const stats = data?.stats
+  let deltaLabel = ''
+  if (data) {
+    const delta = data.stats.totalKop - data.previousStats.totalKop
+    deltaLabel =
+      data.previousStats.totalKop === 0
+        ? 'Попередній період без вкладень'
+        : `${delta >= 0 ? '+' : '−'}${formatMoney(Math.abs(delta))} до попереднього періоду`
   }
 
   return (
@@ -94,7 +72,7 @@ export function AnalyticsPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilter period={period} onPeriodChange={setPeriod} custom={custom} onCustomChange={setCustom} />
-            {has('reports.export') ? (
+            {can('reports.export') ? (
               <div className="flex gap-1">
                 <Button variant="outline" size="sm" onClick={() => exportNote('XLSX')}>
                   <Download />
@@ -119,7 +97,7 @@ export function AnalyticsPage() {
           onValueChange={setUserId}
           options={[
             { value: EMPTY_FILTER, label: 'Усі співробітники' },
-            ...db.users.map((user) => ({ value: user.id, label: user.fullName })),
+            ...(reference?.employees ?? []).map((user) => ({ value: user.id, label: user.name })),
           ]}
         />
         <Select
@@ -128,9 +106,7 @@ export function AnalyticsPage() {
           onValueChange={setCategoryId}
           options={[
             { value: EMPTY_FILTER, label: 'Усі категорії' },
-            ...db.categories
-              .filter((item) => item.kind === 'product')
-              .map((item) => ({ value: item.id, label: item.name })),
+            ...(reference?.categories ?? []).map((item) => ({ value: item.id, label: item.name })),
           ]}
         />
         <Select
@@ -139,7 +115,7 @@ export function AnalyticsPage() {
           onValueChange={setSupplierId}
           options={[
             { value: EMPTY_FILTER, label: 'Усі постачальники' },
-            ...db.suppliers.map((item) => ({ value: item.id, label: item.name })),
+            ...(reference?.suppliers ?? []).map((item) => ({ value: item.id, label: item.name })),
           ]}
         />
         <Select
@@ -148,7 +124,7 @@ export function AnalyticsPage() {
           onValueChange={setAssetType}
           options={[
             { value: EMPTY_FILTER, label: 'Уся техніка' },
-            ...assetTypes.map((type) => ({ value: type, label: type })),
+            ...(reference?.assetTypes ?? []).map((type) => ({ value: type, label: type })),
           ]}
         />
         <Select
@@ -162,60 +138,69 @@ export function AnalyticsPage() {
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Ремонтів з вкладеннями" value={stats.count} hint="За фільтрами" />
-        <Stat label="Середня собівартість" value={formatMoney(stats.avgKop)} hint="На один ремонт" />
-        <Stat label="Мінімальна" value={formatMoney(stats.minKop)} hint="Найдешевший ремонт" />
-        <Stat label="Максимальна" value={formatMoney(stats.maxKop)} hint="Найдорожчий ремонт" />
-        <Stat label="Разом вкладено" value={formatMoney(stats.totalKop)} hint={deltaLabel} />
-      </div>
+      {isLoading || !data || !stats ? (
+        <>
+          <CardsSkeleton count={5} />
+          <Skeleton className="h-72 w-full" />
+        </>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Stat label="Ремонтів з вкладеннями" value={stats.count} hint="За фільтрами" />
+            <Stat label="Середня собівартість" value={formatMoney(stats.avgKop)} hint="На один ремонт" />
+            <Stat label="Мінімальна" value={formatMoney(stats.minKop)} hint="Найдешевший ремонт" />
+            <Stat label="Максимальна" value={formatMoney(stats.maxKop)} hint="Найдорожчий ремонт" />
+            <Stat label="Разом вкладено" value={formatMoney(stats.totalKop)} hint={deltaLabel} />
+          </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Динаміка вкладень</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TrendLineChart data={series} />
-          </CardContent>
-        </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Динаміка вкладень</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TrendLineChart data={data.series} />
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Собівартість за типами техніки</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HorizontalBars data={byAssetType} emptyText="За фільтрами даних немає." />
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Собівартість за типами техніки</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HorizontalBars data={data.byAssetType} emptyText="За фільтрами даних немає." />
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Витрати за категоріями</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HorizontalBars data={byCategory} emptyText="За цей період вкладень не було." />
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Витрати за категоріями</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HorizontalBars data={data.byCategory} emptyText="За цей період вкладень не було." />
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Закупівлі за постачальниками</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HorizontalBars data={bySupplier} emptyText="За цей період закупівель не було." />
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Закупівлі за постачальниками</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HorizontalBars data={data.bySupplier} emptyText="За цей період закупівель не було." />
+              </CardContent>
+            </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Вкладення за співробітниками</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HorizontalBars data={byEmployee} emptyText="За цей період вкладень не було." />
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>Вкладення за співробітниками</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HorizontalBars data={data.byEmployee} emptyText="За цей період вкладень не було." />
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       <InfoNote>
         Усі суми ведуть до вихідних операцій: відкрийте заявку або закупівлю, щоб побачити кожне списання з ціною

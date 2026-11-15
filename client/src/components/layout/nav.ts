@@ -1,3 +1,11 @@
+/**
+ * The navigation map of the app.
+ *
+ * `NAV_ITEMS` is the full desktop navigation; an item with a `permission` is
+ * shown only to users who have it. `MOBILE_NAV_ITEMS` is the master's mobile
+ * mode: exactly two sections.
+ */
+
 import {
   BarChart3,
   Boxes,
@@ -12,12 +20,13 @@ import {
   Wrench,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
-import type { Permission } from '@/domain/types'
+import type { Permission } from '@/api'
 
 export interface NavItem {
   to: string
   label: string
   icon: ComponentType<{ className?: string }>
+  /** Permission needed to see the item; none means everyone. */
   permission?: Permission
 }
 
@@ -35,7 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/settings', label: 'Налаштування', icon: Settings, permission: 'settings.manage' },
 ]
 
-/** Мобільний режим майстра: строго два розділи. */
+/** The master's mobile mode: strictly two sections. */
 export const MOBILE_NAV_ITEMS: NavItem[] = [
   { to: '/orders', label: 'Заявки', icon: Wrench },
   { to: '/inventory', label: 'Склад і закупівлі', icon: Boxes },

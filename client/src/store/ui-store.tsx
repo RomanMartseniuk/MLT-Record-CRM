@@ -1,43 +1,25 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+/**
+ * Provides the UI state that is not business data: theme, mobile mode and
+ * toast notifications. The context type and the `useUi` hook are in
+ * ./ui-context.ts.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { UiContext } from './ui-context'
+import type { Theme, ToastItem, UiContextValue } from './ui-context'
 
 const THEME_KEY = 'mlt-oblik:theme:v1'
 
-export type Theme = 'light' | 'dark'
-
-export interface ToastItem {
-  id: number
-  title: string
-  description?: string
-  tone: 'default' | 'success' | 'error'
-}
-
-export interface UiContextValue {
-  theme: Theme
-  toggleTheme: () => void
-  /** Примусовий мобільний режим для демонстрації з ноутбука. */
-  forceMobile: boolean
-  setForceMobile: (value: boolean) => void
-  isMobile: boolean
-  /** Справжнє вікно вузьке (телефон), а не примусовий режим. */
-  isNarrow: boolean
-  /** Малювати рамку телефона: примусовий режим на широкому екрані. */
-  showDeviceFrame: boolean
-  toasts: ToastItem[]
-  toast: (title: string, options?: { description?: string; tone?: ToastItem['tone'] }) => void
-  dismissToast: (id: number) => void
-}
-
-const UiContext = createContext<UiContextValue | null>(null)
-
+/** The saved theme, or dark by default. */
 function initialTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_KEY)
     if (stored === 'light' || stored === 'dark') return stored
   } catch {
-    // ignore
+    // Storage is blocked: fall through to the default.
   }
-  // Палітра задумана темною, тому без збереженого вибору стартуємо з темної теми.
+  // The palette is designed dark, so without a saved choice we start with the dark theme.
   return 'dark'
 }
 
@@ -49,6 +31,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [narrow, setNarrow] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768))
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
+  // Apply the theme to the page and remember it.
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'dark') root.classList.add('dark')
@@ -56,10 +39,11 @@ export function UiProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(THEME_KEY, theme)
     } catch {
-      // ignore
+      // Storage is blocked: the theme lives only until the page is reloaded.
     }
   }, [theme])
 
+  // A window narrower than 768px is treated as a phone.
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < 768)
     window.addEventListener('resize', onResize)
@@ -70,17 +54,15 @@ export function UiProvider({ children }: { children: ReactNode }) {
     setToasts((items) => items.filter((item) => item.id !== id))
   }, [])
 
-  const toast = useCallback(
-    (title: string, options?: { description?: string; tone?: ToastItem['tone'] }) => {
-      toastSeq += 1
-      const id = toastSeq
-      setToasts((items) => [...items, { id, title, description: options?.description, tone: options?.tone ?? 'default' }])
-      window.setTimeout(() => {
-        setToasts((items) => items.filter((item) => item.id !== id))
-      }, 4500)
-    },
-    [],
-  )
+  /** Shows a toast that disappears by itself after a few seconds. */
+  const toast = useCallback((title: string, options?: { description?: string; tone?: ToastItem['tone'] }) => {
+    toastSeq += 1
+    const id = toastSeq
+    setToasts((items) => [...items, { id, title, description: options?.description, tone: options?.tone ?? 'default' }])
+    window.setTimeout(() => {
+      setToasts((items) => items.filter((item) => item.id !== id))
+    }, 4500)
+  }, [])
 
   const value = useMemo<UiContextValue>(
     () => ({
@@ -99,10 +81,4 @@ export function UiProvider({ children }: { children: ReactNode }) {
   )
 
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>
-}
-
-export function useUi(): UiContextValue {
-  const context = useContext(UiContext)
-  if (!context) throw new Error('useUi має використовуватись у середині UiProvider')
-  return context
 }

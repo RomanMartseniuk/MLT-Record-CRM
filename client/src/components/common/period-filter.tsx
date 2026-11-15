@@ -1,7 +1,12 @@
+/**
+ * Period picker: a preset (today, week…) or a custom date range.
+ */
+
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { PERIOD_LABELS } from '@/domain/calc'
-import type { DateRange, PeriodKey } from '@/domain/calc'
+import type { DateRange } from '@/api'
+import { PERIOD_LABELS } from '@/lib/period'
+import type { PeriodKey } from '@/lib/period'
 
 const PERIOD_ORDER: PeriodKey[] = ['today', 'week', 'month', 'year', 'all', 'custom']
 

@@ -1,6 +1,10 @@
+/**
+ * Renders the toast notifications held by the UI store.
+ */
+
 import { AlertCircle, Check, Info, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useUi } from '@/store/ui-store'
+import { useUi } from '@/store/ui-context'
 
 export function Toaster() {
   const { toasts, dismissToast } = useUi()

@@ -2,40 +2,55 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { ShieldCheck, Wrench } from 'lucide-react'
+import { useDemoUsers, useLogin, useLoginAsDemo, useSession } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
-import { ErrorNote, InfoNote } from '@/components/common/page'
-import { PERMISSION_LABELS, ROLE_LABELS } from '@/domain/permissions'
-import { useDb } from '@/store/db-store'
+import { ErrorNote, FullPageLoading, InfoNote } from '@/components/common/page'
+import { PERMISSION_LABELS, ROLE_LABELS } from '@/lib/labels'
 
+/** Users offered by the quick demo sign-in on this screen. */
 const DEMO_IDS = ['u_admin', 'u_master', 'u_manager']
 
 export function LoginPage() {
-  const { db, currentUser, login } = useDb()
+  const { session, isLoading } = useSession()
+  const { data: demoUsers = [] } = useDemoUsers()
+  const login = useLogin()
+  const loginAsDemo = useLoginAsDemo()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  if (currentUser) return <Navigate to="/" replace />
+  if (isLoading) return <FullPageLoading />
+  if (session) return <Navigate to="/" replace />
 
-  const submit = (event: FormEvent) => {
+  const pending = login.isPending || loginAsDemo.isPending
+
+  /** Signs in by e-mail; shows the server's message when it refuses. */
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const found = db.users.find((user) => user.email.toLowerCase() === email.trim().toLowerCase())
-    if (!found) {
-      setError('Користувача з такою поштою немає. Скористайтесь швидким входом нижче.')
+    setError('')
+    const result = await login.mutateAsync({ email, password })
+    if (!result.ok) {
+      setError(result.error)
       return
     }
-    if (found.blocked) {
-      setError('Користувача заблоковано. Зверніться до адміністратора.')
-      return
-    }
-    login(found.id)
     navigate('/')
   }
 
-  const demoUsers = db.users.filter((user) => DEMO_IDS.includes(user.id))
+  /** Quick demo sign-in as one of the listed users. */
+  const signInAs = async (userId: string) => {
+    setError('')
+    const result = await loginAsDemo.mutateAsync(userId)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    navigate('/')
+  }
+
+  const quickUsers = demoUsers.filter((user) => DEMO_IDS.includes(user.id))
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-muted p-4">
@@ -71,7 +86,7 @@ export function LoginPage() {
               />
             </Field>
             <ErrorNote>{error}</ErrorNote>
-            <Button type="submit" size="lg">
+            <Button type="submit" size="lg" disabled={pending}>
               Увійти
             </Button>
           </form>
@@ -83,15 +98,13 @@ export function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {demoUsers.map((user) => (
+            {quickUsers.map((user) => (
               <button
                 key={user.id}
                 type="button"
-                onClick={() => {
-                  login(user.id)
-                  navigate('/')
-                }}
-                className="flex items-start gap-3 rounded-md border border-border p-3 text-left hover:bg-muted"
+                disabled={pending}
+                onClick={() => void signInAs(user.id)}
+                className="flex items-start gap-3 rounded-md border border-border p-3 text-left hover:bg-muted disabled:opacity-60"
               >
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0">

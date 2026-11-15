@@ -1,3 +1,7 @@
+/**
+ * A native select styled like shadcn.
+ */
+
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -19,8 +23,8 @@ export interface SelectProps {
 }
 
 /**
- * Нативний select під стилем shadcn.
- * На мобільному це дає звичний системний вибір — зручно майстру в полі.
+ * A native select in the shadcn style.
+ * On mobile it gives the familiar system picker, which suits a master in the field.
  */
 export function Select({
   value,

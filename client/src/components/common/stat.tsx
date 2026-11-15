@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 
 /**
- * Показник на головній. Кожне число клікабельне й веде до своїх операцій —
- * будь-яка сума має прослідковуватись до джерела.
+ * A key figure of the dashboard. Every number is clickable and leads to its
+ * operations: any sum must be traceable to its source.
  */
 export function Stat({
   label,
@@ -51,7 +51,7 @@ export function Stat({
   )
 }
 
-/** Невеличка плитка-заглушка замість фото товару. Без зовнішніх зображень. */
+/** A small neutral tile instead of a product photo. No external images. */
 export function PhotoTile({
   tone,
   name,

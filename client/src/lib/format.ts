@@ -1,3 +1,8 @@
+/**
+ * Formatting and parsing of money, quantities and dates for the Ukrainian UI.
+ * Money is always an integer number of kopecks (fields named *Kop).
+ */
+
 const moneyFormatter = new Intl.NumberFormat('uk-UA', {
   style: 'currency',
   currency: 'UAH',
@@ -34,7 +39,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat('uk-UA', {
 const monthFormatter = new Intl.DateTimeFormat('uk-UA', { month: 'short', year: '2-digit' })
 const dayMonthFormatter = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' })
 
-/** Гроші зберігаються в копійках (ціле число), щоб не втрачати точність. */
+/** Money is stored in kopecks (an integer) so no precision is lost. */
 export function formatMoney(kop: number): string {
   return moneyFormatter.format(kop / 100)
 }
@@ -64,7 +69,7 @@ export function formatMonth(iso: string): string {
   return monthFormatter.format(new Date(iso))
 }
 
-/** Парсить введену користувачем суму в копійки. Приймає і кому, і точку. */
+/** Parses a sum typed by the user into kopecks. Accepts both a comma and a dot. */
 export function parseMoneyToKop(input: string): number | null {
   const normalized = input.replace(/\s/g, '').replace(',', '.')
   if (normalized === '') return null
@@ -73,7 +78,7 @@ export function parseMoneyToKop(input: string): number | null {
   return Math.round(value * 100)
 }
 
-/** Копійки у значення для текстового поля: 125000 -> "1250.00" */
+/** Kopecks as a text field value: 125000 -> "1250.00" */
 export function kopToInput(kop: number): string {
   return (kop / 100).toFixed(2)
 }

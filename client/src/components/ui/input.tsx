@@ -1,3 +1,8 @@
+/**
+ * Form primitives: Input, Textarea, Label and Field (a label with a control,
+ * a hint and an error message).
+ */
+
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 

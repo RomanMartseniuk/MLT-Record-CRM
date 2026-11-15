@@ -1,4 +1,9 @@
-import { useMemo, useState } from 'react'
+/**
+ * Categories reference page: product categories with their product counts.
+ * Categories are never deleted, only deactivated, so history stays intact.
+ */
+
+import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,30 +22,29 @@ import {
   TableWrap,
 } from '@/components/ui/table'
 import { ErrorNote, InfoNote, PageBody, PageHeader } from '@/components/common/page'
-import { createCategory, updateCategory } from '@/domain/ops'
-import { sortBy } from '@/lib/utils'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
-import type { Category } from '@/domain/types'
+import { TableSkeleton } from '@/components/ui/skeleton'
+import { useCategories, useCreateCategory, useSession, useUpdateCategory } from '@/api'
+import type { CategoryRow } from '@/api'
+import { useSingleFlight } from '@/lib/use-single-flight'
+import { useUi } from '@/store/ui-context'
 
 export function CategoriesPage() {
-  const { db, apply, currentUser, has } = useDb()
+  const { data: categories, isLoading } = useCategories()
+  const createCategory = useCreateCategory()
+  const updateCategory = useUpdateCategory()
+  const { can } = useSession()
   const { isMobile, toast } = useUi()
 
   const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<Category | null>(null)
+  const [editing, setEditing] = useState<CategoryRow | null>(null)
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
   const [error, setError] = useState('')
 
-  const rows = useMemo(() => {
-    const prepared = db.categories.map((category) => ({
-      category,
-      productCount: db.products.filter((product) => product.categoryId === category.id).length,
-      parent: category.parentId ? db.categories.find((item) => item.id === category.parentId) : null,
-    }))
-    return sortBy(prepared, (row) => `${row.category.kind}|${row.category.name}`)
-  }, [db])
+  /** Rows come sorted and with product counts from the server. */
+  const rows = categories ?? []
+  // One write at a time: a repeated click while a request is running is ignored.
+  const { run, pending } = useSingleFlight()
 
   const openCreate = () => {
     setEditing(null)
@@ -50,7 +54,7 @@ export function CategoriesPage() {
     setFormOpen(true)
   }
 
-  const openEdit = (category: Category) => {
+  const openEdit = (category: CategoryRow) => {
     setEditing(category)
     setName(category.name)
     setParentId(category.parentId ?? '')
@@ -58,27 +62,25 @@ export function CategoriesPage() {
     setFormOpen(true)
   }
 
-  const submit = () => {
-    if (!currentUser) return
-    const result = editing
-      ? apply((draft) =>
-          updateCategory(draft, editing.id, { name, parentId: parentId || null }, currentUser.id),
-        )
-      : apply((draft) =>
-          createCategory(draft, { name, kind: 'product', parentId: parentId || null }, currentUser.id),
-        )
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    toast(editing ? 'Категорію оновлено' : 'Категорію створено', { tone: 'success' })
-    setFormOpen(false)
-  }
+  /** Creates or updates the category; a business error is shown in the dialog. */
+  const submit = () =>
+    run(async () => {
+      const result = editing
+        ? await updateCategory.mutateAsync({ id: editing.id, patch: { name, parentId: parentId || null } })
+        : await createCategory.mutateAsync({ name, kind: 'product', parentId: parentId || null })
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      toast(editing ? 'Категорію оновлено' : 'Категорію створено', { tone: 'success' })
+      setFormOpen(false)
+    })
 
-  const toggleActive = (category: Category) => {
-    if (!currentUser) return
-    apply((draft) => updateCategory(draft, category.id, { active: !category.active }, currentUser.id))
-  }
+  const toggleActive = (category: CategoryRow) =>
+    run(async () => {
+      const result = await updateCategory.mutateAsync({ id: category.id, patch: { active: !category.active } })
+      if (!result.ok) toast(result.error, { tone: 'error' })
+    })
 
   return (
     <PageBody>
@@ -86,7 +88,7 @@ export function CategoriesPage() {
         title="Категорії"
         description="Довідник категорій товарів. Вкладена структура підтримується."
         actions={
-          has('purchases.create') ? (
+          can('purchases.create') ? (
             <Button size={isMobile ? 'touch' : 'default'} onClick={openCreate}>
               <Plus />
               Нова категорія
@@ -96,6 +98,9 @@ export function CategoriesPage() {
       />
 
       <Card>
+        {isLoading ? (
+          <TableSkeleton rows={5} cols={5} />
+        ) : (
         <TableWrap>
           <Table>
             <TableHeader>
@@ -113,13 +118,11 @@ export function CategoriesPage() {
                 <TableEmpty colSpan={6}>Категорій ще немає</TableEmpty>
               ) : (
                 rows.map((row) => (
-                  <TableRow key={row.category.id}>
-                    <TableCell className="font-medium">{row.category.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.parent ? row.parent.name : '—'}
-                    </TableCell>
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.parentName ?? '—'}</TableCell>
                     <TableCell>
-                      {row.category.kind === 'product' ? (
+                      {row.kind === 'product' ? (
                         <Badge variant="outline">Товар</Badge>
                       ) : (
                         <Badge variant="secondary">Витрата</Badge>
@@ -127,20 +130,25 @@ export function CategoriesPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{row.productCount}</TableCell>
                     <TableCell>
-                      {row.category.active ? (
+                      {row.active ? (
                         <Badge variant="outline">Активна</Badge>
                       ) : (
                         <Badge variant="secondary">Неактивна</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {has('purchases.create') ? (
+                      {can('purchases.create') ? (
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(row.category)}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>
                             Змінити
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => toggleActive(row.category)}>
-                            {row.category.active ? 'Деактивувати' : 'Активувати'}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => void toggleActive(row)}
+                          >
+                            {row.active ? 'Деактивувати' : 'Активувати'}
                           </Button>
                         </div>
                       ) : null}
@@ -151,6 +159,7 @@ export function CategoriesPage() {
             </TableBody>
           </Table>
         </TableWrap>
+        )}
       </Card>
 
       <InfoNote>
@@ -168,7 +177,9 @@ export function CategoriesPage() {
             <Button variant="outline" onClick={() => setFormOpen(false)}>
               Скасувати
             </Button>
-            <Button onClick={submit}>{editing ? 'Зберегти' : 'Створити'}</Button>
+            <Button onClick={() => void submit()} disabled={pending}>
+              {editing ? 'Зберегти' : 'Створити'}
+            </Button>
           </>
         }
       >
@@ -181,7 +192,7 @@ export function CategoriesPage() {
               value={parentId}
               onValueChange={setParentId}
               placeholder="Без батьківської"
-              options={db.categories
+              options={rows
                 .filter((item) => item.kind === 'product' && item.id !== editing?.id)
                 .map((item) => ({ value: item.id, label: item.name }))}
             />

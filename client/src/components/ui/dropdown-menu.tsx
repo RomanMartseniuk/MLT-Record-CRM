@@ -9,7 +9,7 @@ export interface DropdownMenuProps {
   className?: string
 }
 
-/** Просте меню: закривається по кліку поза ним і по Escape. */
+/** A simple menu: closes on a click outside it and on Escape. */
 export function DropdownMenu({ trigger, children, align = 'end', className }: DropdownMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)

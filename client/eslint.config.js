@@ -19,4 +19,25 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Only the API layer itself may touch the simulated server. Everything
+    // else must go through the public contract in '@/api'.
+    files: ['src/**/*.{ts,tsx}'],
+    // `store/db-store.tsx` is the legacy store: it reads the mock storage
+    // directly until the last page is migrated, then it is deleted.
+    ignores: ['src/api/**', 'src/store/db-store.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/api/mock', '@/api/mock/*', '@/api/mock/**'],
+              message: "Import from '@/api' only: the mock server is replaceable.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

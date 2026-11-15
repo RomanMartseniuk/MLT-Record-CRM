@@ -1,24 +1,70 @@
+/**
+ * Settings page: organisation and integration parameters, theme and demo data reset.
+ * Text fields are saved when they lose focus; selects and switches save at once.
+ */
+
 import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
+import { useResetDemoData, useSettings, useUpdateSettings } from '@/api'
+import type { Settings } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/toggle'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { InfoNote, PageBody, PageHeader } from '@/components/common/page'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
+import { useUi } from '@/store/ui-context'
 
 export function SettingsPage() {
-  const { db, mutate, reset } = useDb()
+  const { data: settings } = useSettings()
+  const updateSettings = useUpdateSettings()
+  const resetDemo = useResetDemoData()
   const { theme, toggleTheme, toast } = useUi()
   const [resetOpen, setResetOpen] = useState(false)
 
-  const update = (patch: Partial<typeof db.settings>) => {
-    mutate((draft) => {
-      draft.settings = { ...draft.settings, ...patch }
+  /**
+   * Values the user changed but the server has not confirmed yet.
+   * Typing goes here first, so an input never jumps back to the old server
+   * value while a request is in flight; the field is saved when it loses focus.
+   */
+  const [draft, setDraft] = useState<Partial<Settings>>({})
+
+  if (!settings) {
+    return (
+      <PageBody>
+        <PageHeader title="Налаштування" description="Загальні параметри системи" />
+        <Skeleton className="h-64 w-full" />
+      </PageBody>
+    )
+  }
+
+  /** The value to show: the unsaved draft if there is one, otherwise the server's. */
+  const field = <K extends keyof Settings>(key: K): Settings[K] =>
+    (key in draft ? draft[key] : settings[key]) as Settings[K]
+
+  const clearDraft = (keys: Array<keyof Settings>) =>
+    setDraft((current) => {
+      const next = { ...current }
+      for (const key of keys) delete next[key]
+      return next
     })
+
+  /** Remembers a change locally and sends it to the server right away. */
+  const saveNow = (patch: Partial<Settings>) => {
+    setDraft((current) => ({ ...current, ...patch }))
+    updateSettings.mutate(patch, { onSettled: () => clearDraft(Object.keys(patch) as Array<keyof Settings>) })
+  }
+
+  /** Saves a text field that was edited, once the user leaves it. */
+  const saveField = (key: keyof Settings) => {
+    if (!(key in draft)) return
+    if (draft[key] === settings[key]) {
+      clearDraft([key])
+      return
+    }
+    saveNow({ [key]: draft[key] } as Partial<Settings>)
   }
 
   return (
@@ -33,21 +79,22 @@ export function SettingsPage() {
           <CardContent className="flex flex-col gap-4">
             <Field label="Назва організації">
               <Input
-                value={db.settings.orgName}
-                onChange={(event) => update({ orgName: event.target.value })}
+                value={field('orgName')}
+                onChange={(event) => setDraft((current) => ({ ...current, orgName: event.target.value }))}
+                onBlur={() => saveField('orgName')}
               />
             </Field>
             <Field label="Валюта" hint="У першій версії лише гривня">
               <Select
-                value={db.settings.currency}
-                onValueChange={(value) => update({ currency: value })}
+                value={field('currency')}
+                onValueChange={(value) => saveNow({ currency: value })}
                 options={[{ value: 'UAH', label: 'UAH — гривня (₴)' }]}
               />
             </Field>
             <Field label="Часовий пояс">
               <Select
-                value={db.settings.timeZone}
-                onValueChange={(value) => update({ timeZone: value })}
+                value={field('timeZone')}
+                onValueChange={(value) => saveNow({ timeZone: value })}
                 options={[
                   { value: 'Europe/Kyiv', label: 'Europe/Kyiv' },
                   { value: 'Europe/Warsaw', label: 'Europe/Warsaw' },
@@ -57,8 +104,8 @@ export function SettingsPage() {
             </Field>
             <Field label="Формат дати">
               <Select
-                value={db.settings.dateFormat}
-                onValueChange={(value) => update({ dateFormat: value })}
+                value={field('dateFormat')}
+                onValueChange={(value) => saveNow({ dateFormat: value })}
                 options={[
                   { value: 'ДД.ММ.РРРР', label: 'ДД.ММ.РРРР' },
                   { value: 'РРРР-ММ-ДД', label: 'РРРР-ММ-ДД' },
@@ -74,11 +121,7 @@ export function SettingsPage() {
               <CardTitle>Інтерфейс</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <Switch
-                checked={theme === 'dark'}
-                onCheckedChange={toggleTheme}
-                label="Темна тема"
-              />
+              <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} label="Темна тема" />
               <InfoNote>
                 Мобільний режим майстра перемикається кнопкою в шапці — зручно показувати клієнту з ноутбука.
               </InfoNote>
@@ -93,13 +136,14 @@ export function SettingsPage() {
               <Field label="Час нічного оновлення">
                 <Input
                   type="time"
-                  value={db.settings.nightlySyncTime}
-                  onChange={(event) => update({ nightlySyncTime: event.target.value })}
+                  value={field('nightlySyncTime')}
+                  onChange={(event) => setDraft((current) => ({ ...current, nightlySyncTime: event.target.value }))}
+                  onBlur={() => saveField('nightlySyncTime')}
                 />
               </Field>
               <Switch
-                checked={db.settings.webhookEnabled}
-                onCheckedChange={(value) => update({ webhookEnabled: value })}
+                checked={field('webhookEnabled')}
+                onCheckedChange={(value) => saveNow({ webhookEnabled: value })}
                 label="Приймати вебхуки RO App"
               />
             </CardContent>
@@ -130,8 +174,8 @@ export function SettingsPage() {
         confirmLabel="Скинути"
         tone="destructive"
         onClose={() => setResetOpen(false)}
-        onConfirm={() => {
-          reset()
+        onConfirm={async () => {
+          await resetDemo.mutateAsync()
           toast('Демо-дані скинуто', { tone: 'success' })
           return { ok: true }
         }}

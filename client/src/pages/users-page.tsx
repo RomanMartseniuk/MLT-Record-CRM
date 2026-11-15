@@ -1,97 +1,52 @@
+/**
+ * Users page (administrators only): who can sign in and what each person may do.
+ *
+ * Two roles exist in the MVP. "Manager" rights are not a role: an
+ * administrator grants them to each user individually on top of the executor
+ * role. Users are never deleted, only blocked. The page lists the users and
+ * opens the two dialogs; the permission check itself is done by the server.
+ */
+
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useSession, useUpdateUser, useUsers } from '@/api'
+import type { User } from '@/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog } from '@/components/ui/dialog'
-import { Field, Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/toggle'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableWrap,
-} from '@/components/ui/table'
-import { ErrorNote, InfoNote, PageBody, PageHeader } from '@/components/common/page'
-import {
-  ALL_PERMISSIONS,
-  PERMISSION_LABELS,
-  ROLE_LABELS,
-  ROLE_PERMISSIONS,
-} from '@/domain/permissions'
-import { createUser, updateUser } from '@/domain/ops'
-import { useDb } from '@/store/db-store'
-import { useUi } from '@/store/ui-store'
-import type { Permission, User, UserRole } from '@/domain/types'
+import { TableSkeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrap } from '@/components/ui/table'
+import { InfoNote, PageBody, PageHeader } from '@/components/common/page'
+import { CreateUserDialog } from '@/components/users/create-user-dialog'
+import { EditPermissionsDialog } from '@/components/users/edit-permissions-dialog'
+import { PERMISSION_LABELS, ROLE_LABELS } from '@/lib/labels'
+import { useSingleFlight } from '@/lib/use-single-flight'
+import { useUi } from '@/store/ui-context'
 
 export function UsersPage() {
-  const { db, apply, currentUser } = useDb()
+  const { data: users, isLoading } = useUsers()
+  const updateUser = useUpdateUser()
+  const { user: currentUser } = useSession()
   const { isMobile, toast } = useUi()
+  // One write at a time: a repeated click while a request is running is ignored.
+  const { run, pending } = useSingleFlight()
 
   const [createOpen, setCreateOpen] = useState(false)
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<UserRole>('executor')
-  const [createError, setCreateError] = useState('')
-
   const [editing, setEditing] = useState<User | null>(null)
-  const [editRole, setEditRole] = useState<UserRole>('executor')
-  const [editExtras, setEditExtras] = useState<Permission[]>([])
 
-  const openEdit = (user: User) => {
-    setEditing(user)
-    setEditRole(user.role)
-    setEditExtras([...user.extraPermissions])
-  }
-
-  const submitCreate = () => {
-    if (!currentUser) return
-    const result = apply((draft) =>
-      createUser(draft, { fullName, email, role, extraPermissions: [] }, currentUser.id),
-    )
-    if (!result.ok) {
-      setCreateError(result.error)
-      return
-    }
-    toast('Користувача створено', { description: 'Самостійної реєстрації в системі немає.', tone: 'success' })
-    setCreateOpen(false)
-    setFullName('')
-    setEmail('')
-  }
-
-  const submitEdit = () => {
-    if (!currentUser || !editing) return
-    const base = ROLE_PERMISSIONS[editRole]
-    const extras = editExtras.filter((permission) => !base.includes(permission))
-    apply((draft) => updateUser(draft, editing.id, { role: editRole, extraPermissions: extras }, currentUser.id))
-    toast('Права оновлено', { tone: 'success' })
-    setEditing(null)
-  }
-
-  const toggleBlocked = (user: User) => {
-    if (!currentUser) return
-    apply((draft) => updateUser(draft, user.id, { blocked: !user.blocked }, currentUser.id))
-  }
-
-  const baseForEdit = ROLE_PERMISSIONS[editRole]
+  const toggleBlocked = (user: User) =>
+    run(async () => {
+      const result = await updateUser.mutateAsync({ id: user.id, patch: { blocked: !user.blocked } })
+      if (!result.ok) toast(result.error, { tone: 'error' })
+    })
 
   return (
     <PageBody>
       <PageHeader
         title="Користувачі"
-        description="Дві роли в MVP. Менеджерські права видаються індивідуально поверх роли виконавця."
+        description="Дві ролі в MVP. Менеджерські права видаються індивідуально поверх ролі виконавця."
         actions={
-          <Button
-            size={isMobile ? 'touch' : 'default'}
-            onClick={() => {
-              setCreateError('')
-              setCreateOpen(true)
-            }}
-          >
+          <Button size={isMobile ? 'touch' : 'default'} onClick={() => setCreateOpen(true)}>
             <Plus />
             Новий користувач
           </Button>
@@ -99,168 +54,82 @@ export function UsersPage() {
       />
 
       <Card>
-        <TableWrap>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Імʼя</TableHead>
-                <TableHead>Пошта</TableHead>
-                <TableHead>Роль</TableHead>
-                <TableHead>Індивідуальні права</TableHead>
-                <TableHead>RO App</TableHead>
-                <TableHead>Стан</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {db.users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.fullName}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={user.role === 'admin' ? 'default' : 'outline'}>{ROLE_LABELS[user.role]}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {user.extraPermissions.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {user.extraPermissions.map((permission) => (
-                          <Badge key={permission} variant="secondary">
-                            {PERMISSION_LABELS[permission]}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{user.roAppName ?? '—'}</TableCell>
-                  <TableCell>
-                    {user.blocked ? (
-                      <Badge variant="destructive">Заблокований</Badge>
-                    ) : (
-                      <Badge variant="outline">Активний</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
-                        Права
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={user.id === currentUser?.id}
-                        onClick={() => toggleBlocked(user)}
-                      >
-                        {user.blocked ? 'Розблокувати' : 'Заблокувати'}
-                      </Button>
-                    </div>
-                  </TableCell>
+        {isLoading || !users ? (
+          <TableSkeleton rows={4} cols={6} />
+        ) : (
+          <TableWrap>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Імʼя</TableHead>
+                  <TableHead>Пошта</TableHead>
+                  <TableHead>Роль</TableHead>
+                  <TableHead>Індивідуальні права</TableHead>
+                  <TableHead>RO App</TableHead>
+                  <TableHead>Стан</TableHead>
+                  <TableHead />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableWrap>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.fullName}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={user.role === 'admin' ? 'default' : 'outline'}>{ROLE_LABELS[user.role]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.extraPermissions.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {user.extraPermissions.map((permission) => (
+                            <Badge key={permission} variant="secondary">
+                              {PERMISSION_LABELS[permission]}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{user.roAppName ?? '—'}</TableCell>
+                    <TableCell>
+                      {user.blocked ? (
+                        <Badge variant="destructive">Заблокований</Badge>
+                      ) : (
+                        <Badge variant="outline">Активний</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setEditing(user)}>
+                          Права
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          // You cannot block yourself: that would lock the last administrator out.
+                          disabled={user.id === currentUser?.id || pending}
+                          onClick={() => void toggleBlocked(user)}
+                        >
+                          {user.blocked ? 'Розблокувати' : 'Заблокувати'}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableWrap>
+        )}
       </Card>
 
       <InfoNote>
         Перевірка прав виконується на сервері. Інтерфейс лише ховає недоступні дії, але не є захистом.
       </InfoNote>
 
-      <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Новий користувач"
-        width="sm"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Скасувати
-            </Button>
-            <Button onClick={submitCreate}>Створити</Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Field label="Імʼя та прізвище">
-            <Input autoFocus value={fullName} onChange={(event) => setFullName(event.target.value)} />
-          </Field>
-          <Field label="Електронна пошта">
-            <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-          </Field>
-          <Field label="Роль">
-            <Select
-              value={role}
-              onValueChange={(value) => setRole(value as UserRole)}
-              options={[
-                { value: 'executor', label: ROLE_LABELS.executor },
-                { value: 'admin', label: ROLE_LABELS.admin },
-              ]}
-            />
-          </Field>
-          <InfoNote>Після створення видайте індивідуальні права, якщо потрібні менеджерські можливості.</InfoNote>
-          <ErrorNote>{createError}</ErrorNote>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(editing)}
-        onClose={() => setEditing(null)}
-        title="Роль та права"
-        description={editing ? editing.fullName : undefined}
-        width="md"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              Скасувати
-            </Button>
-            <Button onClick={submitEdit}>Зберегти</Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Field label="Роль">
-            <Select
-              value={editRole}
-              onValueChange={(value) => setEditRole(value as UserRole)}
-              options={[
-                { value: 'executor', label: ROLE_LABELS.executor },
-                { value: 'admin', label: ROLE_LABELS.admin },
-              ]}
-            />
-          </Field>
-
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">Права</p>
-            <p className="text-xs text-muted-foreground">
-              Відмічені сірим входять у роль автоматично. Решту адміністратор видає індивідуально — так
-              налаштовуються менеджерські можливості.
-            </p>
-            <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-              {ALL_PERMISSIONS.map((permission) => {
-                const fromRole = baseForEdit.includes(permission)
-                const checked = fromRole || editExtras.includes(permission)
-                return (
-                  <Checkbox
-                    key={permission}
-                    checked={checked}
-                    disabled={fromRole}
-                    label={PERMISSION_LABELS[permission]}
-                    description={fromRole ? 'Входить у роль' : permission}
-                    onCheckedChange={(value) => {
-                      setEditExtras((current) =>
-                        value
-                          ? [...current.filter((item) => item !== permission), permission]
-                          : current.filter((item) => item !== permission),
-                      )
-                    }}
-                  />
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </Dialog>
+      {/* Dialogs are mounted only while open, so each one starts with a clean form. */}
+      {createOpen ? <CreateUserDialog onClose={() => setCreateOpen(false)} /> : null}
+      {editing ? <EditPermissionsDialog user={editing} onClose={() => setEditing(null)} /> : null}
     </PageBody>
   )
 }
