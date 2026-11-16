@@ -1,0 +1,12 @@
+# Local Postgres data directory (DBngin)
+DB/
+
+# Secrets (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# Logs and OS junk
+*.log
+.DS_Store
+Thumbs.db
