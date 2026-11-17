@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/03-backend-plan.md`: backend modules, invariants, step-by-step plan.
 - `docs/04-frontend-status.md`: what the client does now, pending fixes, what moves to the server.
 - `docs/05-source-description.md`: original developer description (reference only).
+- `docs/06-server-status.md`: **server work in progress**: where it stopped, the next step, developer decisions that override the plan, and how to set up a new machine. Read it first when continuing server work.
 
 Docs are in Russian, the UI is Ukrainian. If a requirement is unclear, ask the developer instead of guessing.
 
