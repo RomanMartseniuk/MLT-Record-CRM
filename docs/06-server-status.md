@@ -2,21 +2,25 @@
 
 Файл для продолжения работы с другой машины или в новой сессии Claude Code. Обновляй его в конце рабочей сессии. План задач: `superpowers/plans/2026-11-16-server-implementation.md`. Jira: проект MLT, эпик MLT-1, задача Sn = MLT-(n+2) (S0 = MLT-2 … S15 = MLT-17).
 
-## Где остановились (2026-11-17)
+## Где остановились (2026-11-18)
 
 | Задача | Статус |
 |---|---|
 | S0 Окружение (MLT-2) | Готово по факту. Статус в Jira не переведён. |
 | S1 Каркас, конфиг, ошибки, `/health` (MLT-3) | Готово, закоммичено. Статус в Jira не переведён. |
-| S2 Схема БД, Prisma, seed (MLT-4) | В процессе: Prisma 7 установлен и настроен, **моделей в `schema.prisma` ещё нет**. |
+| S2 Схема БД, Prisma, seed (MLT-4) | В процессе: слои 1 и 2 написаны разработчиком и проверены (`npx prisma validate` проходит). Слои 3-5 ещё нет. |
 
-**Следующий шаг:** слой 1 схемы: `User`, `Category`, `Supplier`, `Product` (поля из плана, Task 2, Step 1). Затем слои по порядку:
+**Готовые слои схемы:**
 
-1. Пользователи и справочники: `User`, `Category`, `Supplier`, `Product`
-2. Склад и закупки: `Purchase`, `PurchaseItem`, `Batch`, `Counter`
-3. Заявки из RO App: `Client`, `Asset`, `OrderType`, `Order`, `StatusMapping`
-4. Вложения: `Allocation`, `AllocationLine`
+1. Пользователи и справочники: `User`, `Category`, `Supplier`, `Product`, `Link` (ссылки товара отдельной таблицей).
+2. Склад и закупки: `Purchase`, `PurchaseItem`, `Batch`, `Counter`.
+
+**Следующий шаг:** слой 3, заявки из RO App: `Client`, `Asset`, `OrderType`, `Order`, `StatusMapping`. Разработчик формирует эти модели сам по выгрузке из RO App (поля могут отличаться от клиентского контракта). Обязательно: `externalId @unique`, `rawStatus` как есть, `syncedAt`, связь `Purchase.orderId` с `Order` (сейчас поле без связи). Затем:
+
+4. Вложения: `Allocation` (с услугами, см. ниже), `AllocationLine`
 5. Служебные: `AuditLog`, `SyncLog`, `Setting`, `Expense`, `RefreshToken`
+
+Открыто: формат номера закупки (в схеме комментарий `P-00001`, в ТЗ и клиенте `З-0001`). Счётчик `Counter` с ключом `purchase`, увеличение в транзакции создания закупки.
 
 Единую миграцию `init` делаем, когда схема целиком проходит `npx prisma validate`. Потом `PrismaService` + `inTx`, `resetDb()` для тестов, `schema.e2e-spec.ts`, seed.
 
@@ -27,6 +31,13 @@
 - ID: строки uuid.
 - Токены: access JWT 8 ч **и refresh-токен 30 дней** (хеш в БД, ротация, отзыв при выходе и блокировке). Задача переезжает из S14 в S5. Нужна таблица `RefreshToken`. В `.env` есть `JWT_REFRESH_EXPIRES_IN=744h`, `validateEnv` её пока не читает.
 - Пароль: `bcryptjs`. При создании пользователя **пароль генерирует сервер** и один раз отдаёт в ответе. Пользователь меняет его сам (`POST /auth/change-password`), у `User` есть `mustChangePassword`. Админ может сбросить пароль (новый сгенерированный). Нужны правки клиента (диалог создания и форма смены пароля).
+- Смена пароля добровольная, `mustChangePassword` не нужен. В `User` поля `firstName` и `lastName` вместо `fullName`.
+- Вложение-услуга (ТЗ 4.3): `Allocation` с необязательным `productId`, признаком вида и `serviceName`, без `AllocationLine`, без подрядчика, без переноса. Правка возможна, причина необязательна. Для слоя 4 добавить CHECK в миграции.
+- `Category.kind`: `product | service` (`service` пока задел). `Supplier.phone` и `email` массивы. `photoTone` убран, ссылки товара в таблице `Link`.
+- Enum'ы в БД латиницей (`Unit`: `pcs|l|kg|m`), украинские подписи подставляет маппер на сервере.
+- Партия-корректировка (`Batch.adjustment`) без закупки: `purchaseId` и `purchaseItemId` необязательные. Позже CHECK `qtyRemaining >= 0`.
+- Финансовые записи не удаляются: у связей закупок нет `onDelete: Cascade`.
+- Список правок клиента ведётся в `docs/07-client-changes.md`.
 - Права на справочники: читать любой вошедший; создавать и править категории, поставщиков, товары: `purchases.create`; блокировка и деактивация: `inventory.manage`.
 - Ошибки бизнес-правил: HTTP 422 с украинским `message`. Время в UTC (`@db.Timestamptz(3)` на каждом `DateTime`).
 - Docker не используется. На Render: управляемый Postgres и `prisma migrate deploy` при деплое.
