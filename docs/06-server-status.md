@@ -2,27 +2,27 @@
 
 Файл для продолжения работы с другой машины или в новой сессии Claude Code. Обновляй его в конце рабочей сессии. План задач: `superpowers/plans/2026-11-16-server-implementation.md`. Jira: проект MLT, эпик MLT-1, задача Sn = MLT-(n+2) (S0 = MLT-2 … S15 = MLT-17).
 
-## Где остановились (2026-11-18)
+## Где остановились (2026-11-22)
 
 | Задача | Статус |
 |---|---|
 | S0 Окружение (MLT-2) | Готово по факту. Статус в Jira не переведён. |
 | S1 Каркас, конфиг, ошибки, `/health` (MLT-3) | Готово, закоммичено. Статус в Jira не переведён. |
-| S2 Схема БД, Prisma, seed (MLT-4) | В процессе: слои 1 и 2 написаны разработчиком и проверены (`npx prisma validate` проходит). Слои 3-5 ещё нет. |
+| S2 Схема БД, Prisma, seed (MLT-4) | В процессе: **схема целиком написана** (слои 1-5), проходит `npx prisma validate`, `prisma generate` и `tsc --noEmit`. Миграции `init` ещё нет, не закоммичено. |
 
-**Готовые слои схемы:**
+**Схема (`server/prisma/schema.prisma`):**
 
-1. Пользователи и справочники: `User`, `Category`, `Supplier`, `Product`, `Link` (ссылки товара отдельной таблицей).
+1. Пользователи и справочники: `User`, `Category`, `Supplier`, `Product`, `Link`.
 2. Склад и закупки: `Purchase`, `PurchaseItem`, `Batch`, `Counter`.
+3. Заявки из RO App: `Client`, `Asset`, `OrderType`, `StatusMapping`, `Order`. Сырой статус в `Order.rawStatus`, локальный через `StatusMapping`.
+4. Вложения: `Allocation` (товар или услуга), `AllocationLine`.
+5. Служебные: `AuditLog`, `SyncLog`, `Setting`, `Expense`, `RefreshToken`, `Attachment`, `IdempotencyKey`.
 
-**Следующий шаг:** слой 3, заявки из RO App: `Client`, `Asset`, `OrderType`, `Order`, `StatusMapping`. Разработчик формирует эти модели сам по выгрузке из RO App (поля могут отличаться от клиентского контракта). Обязательно: `externalId @unique`, `rawStatus` как есть, `syncedAt`, связь `Purchase.orderId` с `Order` (сейчас поле без связи). Затем:
+**Следующий шаг:** миграция `init` (`npx prisma migrate dev --create-only --name init`). CHECK-ограничения (`Batch`, `Allocation`, `Purchase`, `Attachment`, положительные суммы и количества) решено пока не вписывать, их описание лежит комментариями над моделями. Потом `PrismaService` + `inTx`, `resetDb()` для тестов, `schema.e2e-spec.ts`, seed (включая `StatusMapping` по реальной выгрузке RO App).
 
-4. Вложения: `Allocation` (с услугами, см. ниже), `AllocationLine`
-5. Служебные: `AuditLog`, `SyncLog`, `Setting`, `Expense`, `RefreshToken`
+Закрыто: номер закупки `З-00001` (минимум 5 цифр, дальше растёт, сортировать списки по `date`, а не по `number`). Счётчик `Counter` с ключом `purchase`, увеличение в транзакции создания закупки. `Category.kind` остаётся `product | service`.
 
-Открыто: формат номера закупки (в схеме комментарий `P-00001`, в ТЗ и клиенте `З-0001`). Счётчик `Counter` с ключом `purchase`, увеличение в транзакции создания закупки.
-
-Единую миграцию `init` делаем, когда схема целиком проходит `npx prisma validate`. Потом `PrismaService` + `inTx`, `resetDb()` для тестов, `schema.e2e-spec.ts`, seed.
+Отложено: история движений остатков (`InventoryMovement`), сейчас её заменяет `AuditLog`. Резерв товара не делаем.
 
 ## Решения разработчика (поверх плана)
 
@@ -36,7 +36,8 @@
 - `Category.kind`: `product | service` (`service` пока задел). `Supplier.phone` и `email` массивы. `photoTone` убран, ссылки товара в таблице `Link`.
 - Enum'ы в БД латиницей (`Unit`: `pcs|l|kg|m`), украинские подписи подставляет маппер на сервере.
 - Партия-корректировка (`Batch.adjustment`) без закупки: `purchaseId` и `purchaseItemId` необязательные. Позже CHECK `qtyRemaining >= 0`.
-- Финансовые записи не удаляются: у связей закупок нет `onDelete: Cascade`.
+- Финансовые записи не удаляются: у необязательных связей явный `onDelete: Restrict` (по умолчанию Prisma ставит `SetNull`), каскад только у `Link` и `RefreshToken`.
+- Отмена закупки без причины: `cancelledAt`, `cancelledById`. Фото и файлы: модель `Attachment`, `hasReceipt` вычисляется. Менеджер и исполнитель заявки: имя и `roAppId`.
 - Список правок клиента ведётся в `docs/07-client-changes.md`.
 - Права на справочники: читать любой вошедший; создавать и править категории, поставщиков, товары: `purchases.create`; блокировка и деактивация: `inventory.manage`.
 - Ошибки бизнес-правил: HTTP 422 с украинским `message`. Время в UTC (`@db.Timestamptz(3)` на каждом `DateTime`).

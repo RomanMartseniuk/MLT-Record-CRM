@@ -13,25 +13,57 @@ datasource db {
 }
 
 enum Role {
-  admin
-  executor
+  ADMIN
+  EXECUTOR
 }
 
 enum CategoryKind {
-  product
-  service
+  PRODUCT
+  SERVICE
 }
 
 enum Unit {
-  pcs
-  l
-  kg
-  m
+  PCS
+  L
+  KG
+  M
 }
 
 enum PurchaseDestination {
-  warehouse
-  order
+  WAREHOUSE
+  ORDER
+}
+
+// Local order status. The raw RO App status is stored as-is in Order.rawStatus
+// and mapped onto this value through StatusMapping (null = unknown status).
+enum LocalStatus {
+  IN_QUEUE
+  IN_WORK
+  DONE
+  CLOSED
+}
+
+enum AllocationKind {
+  PRODUCT
+  SERVICE
+}
+
+enum AllocationStatus {
+  ACTIVE
+  RETURNED
+  CANCELLED
+}
+
+enum AttachmentKind {
+  PRODUCT_PHOTO
+  RECEIPT
+  EXPENSE_FILE
+}
+
+enum SyncSource {
+  WEBHOOK
+  MANUAL
+  NIGHTLY
 }
 
 model Link {
@@ -49,29 +81,38 @@ model Link {
 
 model User {
   id               String   @id @default(uuid())
+  roAppId          String?  @unique
   email            String   @unique
   firstName        String
   lastName         String
   passwordHash     String
-  role             Role     @default(executor)
+  role             Role     @default(EXECUTOR)
   extraPermissions String[]
   blocked          Boolean  @default(false)
   roAppName        String?
   createdAt        DateTime @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @db.Timestamptz(3)
 
-  purchases Purchase[]
+  purchases          Purchase[]       @relation("PurchaseCreatedBy")
+  cancelledPurchases Purchase[]       @relation("PurchaseCancelledBy")
+  attachments        Attachment[]
+  idempotencyKeys    IdempotencyKey[]
+  allocations        Allocation[]
+  auditLogs          AuditLog[]
+  expenses           Expense[]
+  refreshTokens      RefreshToken[]
 }
 
 model Category {
   id   String       @id @default(uuid())
   name String
-  kind CategoryKind @default(product)
+  kind CategoryKind @default(PRODUCT)
 
   parentId String?
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
   products Product[]
+  expenses Expense[]
 
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -102,40 +143,46 @@ model Product {
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
 
-  unit          Unit           @default(pcs)
+  unit          Unit           @default(PCS)
   links         Link[]
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
   purchaseItems PurchaseItem[]
 
-  batches Batch[]
+  batches     Batch[]
+  allocations Allocation[]
+  attachments Attachment[]
 
   @@index([categoryId])
 }
 
 model Purchase {
-  id           String              @id @default(uuid())
-  number       String              @unique // example: "P-00001"
-  date         DateTime            @db.Timestamptz(3)
-  docNumber    String?
-  comment      String?
-  destination  PurchaseDestination @default(warehouse)
-  cancelled    Boolean             @default(false)
-  cancelReason String?
-
-  hasReceipt Boolean @default(false)
+  id          String              @id @default(uuid())
+  number      String              @unique // example: "З-00001" (min 5 digits, grows past 99999)
+  date        DateTime            @db.Timestamptz(3)
+  docNumber   String?
+  comment     String?
+  destination PurchaseDestination @default(WAREHOUSE)
+  cancelled   Boolean             @default(false)
+  cancelledAt DateTime?           @db.Timestamptz(3)
 
   orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   supplierId String
   supplier   Supplier @relation(fields: [supplierId], references: [id])
 
   createdById String
-  user        User   @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+
+  cancelledById String?
+  cancelledBy   User?   @relation("PurchaseCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  attachments Attachment[]
 
   purchaseItems PurchaseItem[]
 
@@ -143,6 +190,8 @@ model Purchase {
 
   @@index([supplierId])
   @@index([createdById])
+  @@index([cancelledById])
+  @@index([orderId])
   @@index([date])
 }
 
@@ -172,10 +221,10 @@ model Batch {
   product   Product @relation(fields: [productId], references: [id])
 
   purchaseId String?
-  purchase   Purchase? @relation(fields: [purchaseId], references: [id])
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
 
   purchaseItemId String?
-  purchaseItem   PurchaseItem? @relation(fields: [purchaseItemId], references: [id])
+  purchaseItem   PurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: Restrict)
 
   qtyReceived  Decimal @db.Decimal(12, 2)
   qtyRemaining Decimal @db.Decimal(12, 2)
@@ -183,6 +232,8 @@ model Batch {
   unitPriceKop Int
   receivedAt   DateTime @default(now()) @db.Timestamptz(3)
   adjustment   Boolean  @default(false)
+
+  allocationLines AllocationLine[]
 
   @@index([productId, receivedAt, id])
   @@index([purchaseId])
@@ -194,4 +245,319 @@ model Counter {
   value Int
 }
 
-model Client
+model Client {
+  id      String @id @default(uuid())
+  roAppId String @unique
+
+  firstName      String
+  lastName       String
+  isOrganization Boolean @default(false)
+
+  email   String?
+  phone   String[]
+  address String?
+
+  syncedAt  DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  assets Asset[]
+  orders Order[]
+}
+
+model Asset {
+  id      String  @id @default(uuid())
+  roAppId String  @unique
+  uid     String? @unique
+
+  title   String
+  color   String?
+  state   String?
+  costKop Int?
+  kind    String?
+  brand   String?
+  model   String?
+
+  ownerId String?
+  owner   Client? @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  syncedAt  DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  orders Order[]
+
+  @@index([ownerId])
+}
+
+// Order types come from RO App; the list can grow, so it is a table, not an enum.
+model OrderType {
+  id      String @id @default(uuid())
+  roAppId String @unique
+  name    String
+
+  orders Order[]
+}
+
+// Raw RO App status -> local status. `local` is null while the status is unmapped.
+model StatusMapping {
+  id    String       @id @default(uuid())
+  raw   String       @unique
+  local LocalStatus?
+  label String
+}
+
+model Order {
+  id      String @id @default(uuid())
+  roAppId String @unique
+
+  docNumber String?
+
+  // Exactly as RO App sent it; the local status is derived through StatusMapping.
+  rawStatus String
+
+  typeId String
+  type   OrderType @relation(fields: [typeId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  assetId String?
+  asset   Asset?  @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  // RO App staff are not necessarily users of this system: name for display,
+  // RO App id to link with User.roAppId and to group analytics by employee.
+  managerName     String?
+  managerRoAppId  String?
+  executorName    String?
+  executorRoAppId String?
+
+  address       String?
+  malfunction   String?
+  managerNotes  String?
+  executorNotes String?
+  accessories   String?
+
+  estimatedPriceKop Int?
+  totalPriceKop     Int?
+  paidPriceKop      Int?
+
+  roCreatedAt  DateTime  @db.Timestamptz(3)
+  dueDate      DateTime? @db.Timestamptz(3)
+  doneAt       DateTime? @db.Timestamptz(3)
+  closedAt     DateTime? @db.Timestamptz(3)
+  warrantyDate DateTime? @db.Timestamptz(3)
+
+  syncedAt  DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  purchases Purchase[]
+
+  expenses        Expense[]
+  allocations     Allocation[]
+  transferredFrom Allocation[] @relation("AllocationTransferredFrom")
+
+  @@index([clientId])
+  @@index([assetId])
+  @@index([typeId])
+  @@index([managerRoAppId])
+  @@index([executorRoAppId])
+  @@index([rawStatus])
+  @@index([roCreatedAt])
+}
+
+// A product (taken from stock by FIFO) or a service attached to an order.
+// SERVICE: productId and qty are null, no lines, amount is entered by hand.
+// CHECK in the migration: kind = PRODUCT -> productId and qty set;
+// kind = SERVICE -> serviceName set, productId null.
+model Allocation {
+  id   String         @id @default(uuid())
+  kind AllocationKind @default(PRODUCT)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  serviceName String?
+  qty         Decimal? @db.Decimal(12, 2)
+  totalKop    Int
+
+  status AllocationStatus @default(ACTIVE)
+  // Mandatory for operations on a closed order.
+  reason String?
+
+  // Set when the allocation was moved from another order.
+  transferredFromOrderId String?
+  transferredFromOrder   Order?  @relation("AllocationTransferredFrom", fields: [transferredFromOrderId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  lines AllocationLine[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([createdById])
+  @@index([transferredFromOrderId])
+}
+
+// One FIFO write-off line: a slice of one batch at that batch's own price.
+model AllocationLine {
+  id String @id @default(uuid())
+
+  allocationId String
+  allocation   Allocation @relation(fields: [allocationId], references: [id])
+
+  batchId String
+  batch   Batch  @relation(fields: [batchId], references: [id])
+
+  qty          Decimal @db.Decimal(12, 2)
+  unitPriceKop Int
+
+  @@index([allocationId])
+  @@index([batchId])
+}
+
+// Who did what. Append-only: rows are never updated or deleted.
+// `action` is a string like "purchase.create" (the list grows, so not an enum).
+model AuditLog {
+  id String   @id @default(uuid())
+  at DateTime @default(now()) @db.Timestamptz(3)
+
+  // Null for system actions (e.g. nightly sync).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  action      String
+  objectType  String
+  objectId    String
+  objectLabel String
+  before      String?
+  after       String?
+  reason      String?
+
+  @@index([at])
+  @@index([userId])
+  @@index([objectType, objectId])
+  @@index([action])
+}
+
+// One RO App synchronization run.
+model SyncLog {
+  id      String     @id @default(uuid())
+  at      DateTime   @default(now()) @db.Timestamptz(3)
+  source  SyncSource
+  ok      Boolean
+  added   Int        @default(0)
+  updated Int        @default(0)
+  message String?
+
+  @@index([at])
+}
+
+// Key-value system settings (orgName, currency, timeZone, nightlySyncTime, ...).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// Placeholder for additional expenses (spec 4.8): model only, no logic in v1.
+model Expense {
+  id        String   @id @default(uuid())
+  amountKop Int
+  date      DateTime @db.Timestamptz(3)
+  comment   String?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  attachments Attachment[]
+
+  @@index([categoryId])
+  @@index([orderId])
+  @@index([createdById])
+  @@index([date])
+}
+
+// Refresh token (30 days). Only the hash is stored. Rotated on every refresh:
+// the old row gets revokedAt and replacedById. All of a user's tokens are
+// revoked on logout and when the user is blocked.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  replacedById String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// File metadata (photo, receipt, expense file). The file itself lives in storage.
+// CHECK in the migration: exactly one of productId / purchaseId / expenseId is set,
+// and it matches `kind`.
+model Attachment {
+  id         String         @id @default(uuid())
+  kind       AttachmentKind
+  storageKey String         @unique
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+
+  expenseId String?
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  @@index([productId])
+  @@index([purchaseId])
+  @@index([expenseId])
+}
+
+// Protects create endpoints (purchases, allocations) from a double submit.
+// The same (userId, key) returns the stored response instead of repeating the operation.
+model IdempotencyKey {
+  id           String   @id @default(uuid())
+  key          String
+  method       String
+  path         String
+  requestHash  String
+  responseCode Int?
+  responseBody Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key])
+  @@index([createdAt])
+}

@@ -48,3 +48,11 @@
 - [ ] HTTP-реализация `ApiClient` (`api/http/`) и экспорт из `api/active-client.ts`.
 - [ ] Обработка ответа 422 с украинским `message` как `{ ok: false, error }`.
 - [ ] Убрать из клиента то, что переехало на сервер (`api/mock/engine` остаётся только для тестов, пока их не перенесли).
+
+## 7. Решения по схеме (слои 3-5)
+
+- [ ] `Purchase.cancelReason` убран (причина отмены закупки не нужна). Убрать из контракта (`types.ts`), диалога отмены, `purchase-detail-page.tsx`, движка `purchases.ts` и тестов. На сервере остаются `cancelledAt` и `cancelledById`.
+- [ ] `Purchase.hasReceipt` на сервере вычисляется по вложениям (`Attachment` с видом `RECEIPT`). Для фото чека, фото товара и файла расхода нужны загрузка и скачивание файлов (контракт пока этого не описывает).
+- [ ] `Order.managerName` и `Order.executorName` дополняются `managerRoAppId` и `executorRoAppId`. В клиентском контракте `engineerName` называется `executorName` на сервере, маппер переводит.
+- [ ] `Allocation.qty` для услуги пустое (в контракте оно обязательное).
+- [ ] Запросы создания закупки и вложения отправляют заголовок `Idempotency-Key` (таблица `IdempotencyKey`).
