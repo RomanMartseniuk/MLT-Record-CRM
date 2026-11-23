@@ -18,7 +18,9 @@
 4. Вложения: `Allocation` (товар или услуга), `AllocationLine`.
 5. Служебные: `AuditLog`, `SyncLog`, `Setting`, `Expense`, `RefreshToken`, `Attachment`, `IdempotencyKey`.
 
-**Следующий шаг:** миграция `init` (`npx prisma migrate dev --create-only --name init`). CHECK-ограничения (`Batch`, `Allocation`, `Purchase`, `Attachment`, положительные суммы и количества) решено пока не вписывать, их описание лежит комментариями над моделями. Потом `PrismaService` + `inTx`, `resetDb()` для тестов, `schema.e2e-spec.ts`, seed (включая `StatusMapping` по реальной выгрузке RO App).
+**Миграция `init` создана и применена к `mlt`** (2026-11-23, `server/prisma/migrations/20261123093838_init`). В конец `migration.sql` вручную дописаны CHECK-ограничения (`Batch`, `Purchase`, `PurchaseItem`, `Allocation`, `AllocationLine`, `Expense`, `Attachment`), в базе подтверждены через `pg_constraint`. Файл миграции после применения не править: Prisma сверяет контрольную сумму, изменения только новыми миграциями. К `mlt_test` миграция ещё не применена (`npx prisma migrate deploy` с `DATABASE_URL` на `mlt_test`).
+
+**Следующий шаг:** `PrismaService` + `inTx`, `resetDb()` для тестов, `schema.e2e-spec.ts` (проверить, что CHECK отклоняют плохие данные), seed (включая `StatusMapping` по реальной выгрузке RO App).
 
 Закрыто: номер закупки `З-00001` (минимум 5 цифр, дальше растёт, сортировать списки по `date`, а не по `number`). Счётчик `Counter` с ключом `purchase`, увеличение в транзакции создания закупки. `Category.kind` остаётся `product | service`.
 
