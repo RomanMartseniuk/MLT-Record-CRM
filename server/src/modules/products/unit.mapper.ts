@@ -1,4 +1,4 @@
-import { Unit } from '../../../generated/prisma/client.js';
+import { Unit } from '../../generated/prisma/client.js';
 
 const TO_UA = { PCS: 'шт', L: 'л', KG: 'кг', M: 'м' } as const satisfies Record<Unit, string>;
 const FROM_UA = { 'шт': 'PCS', 'л': 'L', 'кг': 'KG', 'м': 'M' } as const satisfies Record<string, Unit>;

@@ -61,10 +61,10 @@
    - `TEST_DATABASE_URL=postgresql://postgres@localhost:5432/mlt_test`
    - `JWT_SECRET`: любая строка от 16 символов
    - `JWT_EXPIRES_IN=8h`, `JWT_REFRESH_EXPIRES_IN=744h`, `PORT=3000`, `CORS_ORIGIN=http://localhost:5173`
-4. `npx prisma generate` (клиент генерируется в `server/generated/prisma`, в git не лежит). Когда появятся миграции: `npx prisma migrate deploy`.
+4. `npx prisma generate` (клиент генерируется в `server/src/generated/prisma` (внутри `src`, чтобы попадал в `dist` при сборке), в git не лежит). Когда появятся миграции: `npx prisma migrate deploy`.
 5. Проверка: `npm test`, `npm run test:e2e`, `npm run lint`, `npm run start:dev`, затем `GET http://localhost:3000/api/v1/health`.
 
-Файлы `.env`, каталог данных Postgres `DB/` и `generated/` в git не попадают: на новой машине их нужно создать.
+Файлы `.env`, каталог данных Postgres `DB/` и `src/generated/` в git не попадают: на новой машине их нужно создать.
 
 ## Как работаем
 
