@@ -1,7 +1,9 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../../generated/prisma/client.js';
+import { Prisma, PrismaClient } from '../../generated/prisma/client.js';
 import { ConfigService } from '@nestjs/config';
+
+export type Tx = Prisma.TransactionClient;
 
 @Injectable()
 export class PrismaService
@@ -22,5 +24,9 @@ export class PrismaService
 
   async onModuleDestroy() {
     await this.$disconnect();
+  }
+
+  async inTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return await this.$transaction(fn, { timeout: 15000 });
   }
 }
