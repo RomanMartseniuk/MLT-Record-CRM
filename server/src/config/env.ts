@@ -30,7 +30,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   };
 
   const JWT_EXPIRES_IN = optional('JWT_EXPIRES_IN', '8h');
-  const CORS_ORIGIN = optional('CORS_ORIGIN', 'http://localhost:5173')
+  const CORS_ORIGIN = optional('CORS_ORIGIN', 'http://localhost:5173');
   const PORT = Number(raw.PORT ?? 3000);
   if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
     errors.push('PORT must be integer between 1 and 65535');
